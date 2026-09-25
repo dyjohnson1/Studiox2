@@ -493,5 +493,55 @@ footer{
   search.addEventListener('input',apply);
 </script>
 
+<!-- ============================================================
+     DYNAMIC WRITINGS — from the local CMS, with fallback to the
+     hardcoded list above when the API is unavailable or empty.
+     ============================================================ -->
+<script>
+(function () {
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function cap(s){return s?s.charAt(0).toUpperCase()+s.slice(1):'';}
+
+  fetch('/api/public/writings').then(function(r){if(!r.ok)throw new Error('bad');return r.json();})
+    .then(function(d){
+      var list=(d&&d.writings)||[];
+      if(!list.length) return; // keep fallback
+      var listEl=document.getElementById('wList');
+      if(!listEl) return;
+
+      listEl.innerHTML=list.map(function(w){
+        var external=!!w.externalUrl;
+        var href=external?esc(w.externalUrl):'writing-detail.html?w='+esc(w.slug||w.id);
+        var target=external?' target="_blank" rel="noopener"':'';
+        var extTag=external?' <span class="ext">↗ Published externally</span>':'';
+        return '<a class="w-item reveal in" data-type="'+esc(w.type||'')+'" href="'+href+'"'+target+'>'+
+          '<div class="l"><div class="ti">'+esc(w.title)+'</div>'+
+          (w.excerpt?'<div class="desc">'+esc(w.excerpt)+extTag+'</div>':(extTag?'<div class="desc">'+extTag+'</div>':''))+
+          '</div><div class="r"><span class="dt">'+esc(w.date||'')+'</span>'+
+          '<span class="ty">'+esc(cap(w.type))+'</span></div></a>';
+      }).join('');
+
+      // Re-bind type filter + search against the new DOM.
+      var items=[].slice.call(document.querySelectorAll('.w-item'));
+      var typeBtns=[].slice.call(document.querySelectorAll('.filters .filter-btn'));
+      var search=document.getElementById('wSearch');
+      var activeType='all';
+      function apply(){
+        var q=(search.value||'').trim().toLowerCase();
+        items.forEach(function(it){
+          var tOk=activeType==='all'||it.dataset.type===activeType;
+          var sOk=!q||it.textContent.toLowerCase().indexOf(q)>-1;
+          it.classList.toggle('hide',!(tOk&&sOk));
+        });
+      }
+      typeBtns.forEach(function(b){b.addEventListener('click',function(){
+        typeBtns.forEach(function(x){x.classList.remove('active');});
+        b.classList.add('active');activeType=b.dataset.type;apply();
+      });});
+      if(search) search.addEventListener('input',apply);
+    }).catch(function(){ /* keep fallback */ });
+})();
+</script>
+
 </body>
 </html>

@@ -1,0 +1,10 @@
+node_modules/
+
+# Runtime-generated CMS storage. Back these up by copying the folders,
+# but do not commit them if you want a clean repo. Remove these lines
+# if you prefer to version your content and images in Git.
+data/
+uploads/
+
+*.log
+.DS_Store

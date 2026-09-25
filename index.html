@@ -828,5 +828,102 @@ footer{
 
 </script>
 
+<!-- ============================================================
+     DYNAMIC HOMEPAGE — hero + newest exhibitions/acquire/writings
+     from the local CMS. Falls back to the hardcoded content above
+     if the API is unavailable or a section has no content.
+     ============================================================ -->
+<script>
+(function () {
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function getJSON(url){return fetch(url).then(function(r){if(!r.ok)throw new Error('bad');return r.json();});}
+  var EXH_GRAD=['c1','c2','c3'];
+  var W_GRAD=['w1','w2','w3'];
+
+  // ---- Hero ----
+  getJSON('/api/public/settings').then(function(d){
+    var s=(d&&d.settings)||{};
+    if(s.heroTitle){
+      var t=document.querySelector('.hero-caption .title');
+      if(t) t.textContent=s.heroTitle;
+    }
+    if(s.heroMeta){
+      var m=document.querySelector('.hero-caption .meta');
+      if(m) m.textContent=s.heroMeta;
+    }
+    if(s.heroImage){
+      var img=document.querySelector('.hero-img');
+      if(img){
+        img.style.backgroundImage="url('"+s.heroImage+"')";
+        img.style.backgroundSize='cover';
+        img.style.backgroundPosition='center';
+        var lbl=document.querySelector('.hero-placeholder-label');
+        if(lbl) lbl.style.display='none';
+      }
+    }
+  }).catch(function(){});
+
+  // ---- Exhibitions (newest 2, prefer current/upcoming) ----
+  getJSON('/api/public/exhibitions').then(function(d){
+    var list=(d&&d.exhibitions)||[];
+    if(!list.length) return;
+    var rank={current:0,upcoming:1,past:2};
+    list.sort(function(a,b){return (rank[a.status]||3)-(rank[b.status]||3);});
+    var top=list.slice(0,2);
+    var grid=document.querySelector('#exhibitions .exh-grid');
+    if(!grid) return;
+    grid.innerHTML=top.map(function(x,i){
+      var span=i===0?'span-2':'span-1';
+      var statusCls=x.status==='current'?'exh-status':'exh-status muted';
+      var statusLabel=x.status?x.status.charAt(0).toUpperCase()+x.status.slice(1):'';
+      var inner=x.image
+        ? '<div class="img"><div style="position:absolute;inset:0;background-image:url(\''+esc(x.image)+'\');background-size:cover;background-position:center;"></div></div>'
+        : '<div class="img"><div class="'+EXH_GRAD[i%EXH_GRAD.length]+'"></div></div>';
+      var sub=[ [x.venue,x.location].filter(Boolean).join(', '), x.dateLabel ].filter(Boolean).join('<br>');
+      return '<a class="exh-card '+span+' reveal in" href="exhibition-detail.html?ex='+esc(x.slug||x.id)+'">'+inner+
+        '<div class="info">'+(statusLabel?'<span class="'+statusCls+'">'+esc(statusLabel)+'</span>':'')+
+        '<h3>'+esc(x.title)+'</h3><div class="sub">'+sub+'</div></div></a>';
+    }).join('');
+  }).catch(function(){});
+
+  // ---- Acquire (newest 3) ----
+  getJSON('/api/public/acquire').then(function(d){
+    var list=(d&&d.items)||[];
+    if(!list.length) return;
+    var top=list.slice(0,3);
+    var grid=document.querySelector('#acquire .works-grid');
+    if(!grid) return;
+    grid.innerHTML=top.map(function(it,i){
+      var inner=it.image
+        ? '<div class="img"><div style="position:absolute;inset:0;background-image:url(\''+esc(it.image)+'\');background-size:cover;background-position:center;"></div></div>'
+        : '<div class="img"><div class="'+W_GRAD[i%W_GRAD.length]+'"></div></div>';
+      var act=it.category==='edition'?'Acquire':'Inquire';
+      return '<a class="work reveal in" href="product-detail.html?work='+esc(it.slug||it.id)+'">'+inner+
+        '<div class="info"><div class="t">'+esc(it.title)+'</div>'+
+        '<div class="m">'+esc(it.details||'')+'</div>'+
+        '<span class="act">'+act+'</span></div></a>';
+    }).join('');
+  }).catch(function(){});
+
+  // ---- Writings (newest 3) ----
+  getJSON('/api/public/writings').then(function(d){
+    var list=(d&&d.writings)||[];
+    if(!list.length) return;
+    var top=list.slice(0,3);
+    var block=document.querySelector('#writings .text-block');
+    if(!block) return;
+    block.innerHTML=top.map(function(w){
+      var href=w.externalUrl?esc(w.externalUrl):'writing-detail.html?w='+esc(w.slug||w.id);
+      var target=w.externalUrl?' target="_blank" rel="noopener"':'';
+      return '<a class="text-row reveal in" href="'+href+'"'+target+'>'+
+        '<div class="l"><div class="ti">'+esc(w.title)+'</div>'+
+        (w.excerpt?'<div class="desc">'+esc(w.excerpt)+'</div>':'')+'</div>'+
+        '<div class="r"><span class="dt">'+esc(w.date||'')+'</span>'+
+        '<span class="ty">'+esc(w.type||'')+'</span></div></a>';
+    }).join('');
+  }).catch(function(){});
+})();
+</script>
+
 </body>
 </html>

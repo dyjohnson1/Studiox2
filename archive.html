@@ -579,5 +579,154 @@ footer{
   // reveal observer for year view items when shown
 </script>
 
+<!-- ============================================================
+     DYNAMIC ARCHIVE — loads series/works from the local CMS API.
+     Falls back silently to the hardcoded content above if the API
+     is unavailable or empty (e.g. viewing the static site directly).
+     ============================================================ -->
+<script>
+(function () {
+  var GRADIENTS = ['a1','a2','a3','a4','a5','a6','a7','a8'];
+  var MEDIUM_LABEL = { 'painting': 'painting', 'sculpture': 'sculpture', 'works-on-paper': 'works-on-paper' };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // Build the "materials · year" caption line for a work.
+  function caption(work, includeYear) {
+    var parts = [];
+    if (work.materials && work.materials.length) {
+      parts.push(work.materials.join(', '));
+    }
+    if (includeYear && work.year) parts.push(String(work.year));
+    return parts.join(' · ');
+  }
+
+  function heroFor(work) {
+    if (!work.images || !work.images.length) return null;
+    var h = work.images.filter(function (i) { return i.isHero; })[0];
+    return (h || work.images[0]).path;
+  }
+
+  // A single archive card.
+  function itemHtml(work, gradIdx, includeYear) {
+    var img = heroFor(work);
+    var inner = img
+      ? '<div class="img"><div style="position:absolute;inset:0;background-image:url(\'' + esc(img) +
+        '\');background-size:cover;background-position:center;"></div></div>'
+      : '<div class="img"><div class="' + GRADIENTS[gradIdx % GRADIENTS.length] + '"></div></div>';
+    var medium = work.mediumType || 'painting';
+    var status = work.collectionStatus
+      ? '<div class="status-tag">' + esc(work.collectionStatus) + '</div>' : '';
+    return '<a class="arc-item" data-medium="' + esc(medium) + '" href="archive-work.html?work=' +
+      esc(work.slug || work.id) + '">' + inner +
+      '<div class="t">' + esc(work.title) + '</div>' +
+      '<div class="m">' + esc(caption(work, includeYear)) + '</div>' + status + '</a>';
+  }
+
+  function yearRange(works) {
+    var years = works.map(function (w) { return w.year; }).filter(Boolean);
+    if (!years.length) return '';
+    var min = Math.min.apply(null, years), max = Math.max.apply(null, years);
+    return min === max ? String(min) : (min + ' — ' + max);
+  }
+
+  function buildSeriesView(series, works) {
+    var byId = {};
+    works.forEach(function (w) {
+      var k = w.seriesId || '__solo__';
+      (byId[k] = byId[k] || []).push(w);
+    });
+    var html = '', g = 0;
+    series.forEach(function (s) {
+      var items = byId[s.id] || [];
+      if (!items.length) return;
+      html += '<div class="series-block reveal"><div class="series-head">' +
+        '<h2>' + esc(s.title) + '</h2>' +
+        '<span class="yrs">' + esc(s.year ? String(s.year) : yearRange(items)) + '</span>' +
+        '<span class="count">' + items.length + (items.length === 1 ? ' work' : ' works') + '</span>' +
+        '</div><div class="arc-grid">';
+      items.forEach(function (w) { html += itemHtml(w, g++, true); });
+      html += '</div></div>';
+    });
+    // Solo works (no series) grouped last.
+    var solo = byId['__solo__'] || [];
+    if (solo.length) {
+      html += '<div class="series-block reveal"><div class="series-head">' +
+        '<h2>Solo Works</h2><span class="yrs">' + esc(yearRange(solo)) + '</span>' +
+        '<span class="count">' + solo.length + (solo.length === 1 ? ' work' : ' works') + '</span>' +
+        '</div><div class="arc-grid">';
+      solo.forEach(function (w) { html += itemHtml(w, g++, true); });
+      html += '</div></div>';
+    }
+    return html;
+  }
+
+  function buildYearView(works) {
+    var byYear = {};
+    works.forEach(function (w) {
+      var y = w.year || 'Undated';
+      (byYear[y] = byYear[y] || []).push(w);
+    });
+    var years = Object.keys(byYear).sort(function (a, b) {
+      if (a === 'Undated') return 1;
+      if (b === 'Undated') return -1;
+      return Number(b) - Number(a);
+    });
+    var html = '', g = 0;
+    years.forEach(function (y) {
+      var items = byYear[y];
+      html += '<div class="series-block"><div class="series-head"><h2>' + esc(y) + '</h2>' +
+        '<span class="count">' + items.length + (items.length === 1 ? ' work' : ' works') + '</span>' +
+        '</div><div class="arc-grid">';
+      items.forEach(function (w) { html += itemHtml(w, g++, false); });
+      html += '</div></div>';
+    });
+    return html;
+  }
+
+  function render(series, works) {
+    var seriesView = document.getElementById('seriesView');
+    var yearView = document.getElementById('yearView');
+    if (!seriesView || !yearView) return;
+
+    seriesView.innerHTML = buildSeriesView(series, works);
+    yearView.innerHTML = buildYearView(works);
+
+    // Re-run the existing filter/search logic against the new DOM by
+    // triggering the search input handler (which calls apply()).
+    var search = document.getElementById('arcSearch');
+    if (search) search.dispatchEvent(new Event('input'));
+
+    // Re-observe reveal elements so animations still fire.
+    if (window.IntersectionObserver) {
+      var obs = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (en.isIntersecting) { en.target.classList.add('in'); obs.unobserve(en.target); }
+        });
+      }, { threshold: 0.12 });
+      seriesView.querySelectorAll('.reveal').forEach(function (el) { obs.observe(el); });
+    }
+  }
+
+  fetch('/api/public/series')
+    .then(function (r) { if (!r.ok) throw new Error('no api'); return r.json(); })
+    .then(function (sData) {
+      return fetch('/api/public/works')
+        .then(function (r) { if (!r.ok) throw new Error('no api'); return r.json(); })
+        .then(function (wData) {
+          var series = (sData && sData.series) || [];
+          var works = (wData && wData.works) || [];
+          // Only take over the page if the CMS actually has content.
+          if (works.length) render(series, works);
+        });
+    })
+    .catch(function () { /* keep hardcoded fallback content */ });
+})();
+</script>
+
 </body>
 </html>

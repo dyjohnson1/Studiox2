@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hero — XHS Admin</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+<div class="admin-bar" id="adminBar"></div>
+
+<div class="wrap">
+  <div class="page-eyebrow">Homepage</div>
+  <h1 class="page-title">Hero</h1>
+  <p class="page-sub">The full-bleed opening image and caption on the homepage.</p>
+
+  <div class="msg" id="msg"></div>
+
+  <form id="heroForm" class="card">
+    <div class="field">
+      <label for="heroTitle">Hero Title</label>
+      <input type="text" id="heroTitle" placeholder="Untitled (After the Light)">
+      <div class="hint">Shown in italic serif over the hero image.</div>
+    </div>
+
+    <div class="field">
+      <label for="heroMeta">Caption / Meta</label>
+      <input type="text" id="heroMeta" placeholder="Oil and mixed media on linen · 2026">
+    </div>
+
+    <div class="field">
+      <label>Hero Image</label>
+      <div class="img-slots" style="grid-template-columns:1fr;max-width:520px;">
+        <div class="img-slot" id="heroSlot" style="aspect-ratio:16/9;"><div class="slot-empty">No image</div></div>
+      </div>
+      <input type="file" id="heroFile" accept="image/jpeg,image/png,image/webp" style="margin-top:12px;">
+      <div class="uploading" id="heroStatus"></div>
+      <div class="hint">Full-bleed on the homepage. Large landscape image works best.</div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="btn">Save Hero</button>
+      <a class="btn secondary" href="/admin/dashboard.html">Back to Dashboard</a>
+    </div>
+  </form>
+</div>
+
+<script src="/admin/assets/admin.js"></script>
+<script>
+  const { API, requireSession, renderBar, showMsg, escapeHtml } = window.Admin;
+  let heroImage = null;
+
+  (async function init() {
+    const user = await requireSession();
+    if (!user) return;
+    renderBar('hero', user);
+    wireUpload();
+    await load();
+    document.getElementById('heroForm').addEventListener('submit', save);
+  })();
+
+  function renderImg() {
+    const slot = document.getElementById('heroSlot');
+    if (heroImage) {
+      slot.innerHTML = '<img src="' + escapeHtml(heroImage) + '" alt="">' +
+        '<div class="slot-tools"><span>Hero image</span>' +
+        '<button type="button" id="rm">Remove</button></div>';
+      slot.querySelector('#rm').addEventListener('click', () => { heroImage = null; renderImg(); });
+    } else {
+      slot.innerHTML = '<div class="slot-empty">No image</div>';
+    }
+  }
+
+  function wireUpload() {
+    document.getElementById('heroFile').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const status = document.getElementById('heroStatus');
+      status.textContent = 'Uploading…';
+      try {
+        const fd = new FormData(); fd.append('image', file);
+        const res = await API.upload('/api/upload', fd);
+        heroImage = res.path; renderImg(); status.textContent = '';
+      } catch (err) { status.textContent = ''; showMsg(err.message, 'error'); }
+      e.target.value = '';
+    });
+  }
+
+  async function load() {
+    try {
+      const { settings } = await API.get('/api/settings');
+      document.getElementById('heroTitle').value = settings.heroTitle || '';
+      document.getElementById('heroMeta').value = settings.heroMeta || '';
+      heroImage = settings.heroImage || null;
+      renderImg();
+    } catch (e) { showMsg('Could not load hero settings.', 'error'); }
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    const payload = {
+      heroTitle: document.getElementById('heroTitle').value.trim(),
+      heroMeta: document.getElementById('heroMeta').value.trim(),
+      heroImage: heroImage,
+    };
+    try {
+      await API.put('/api/settings', payload);
+      showMsg('Hero saved.', 'success');
+    } catch (err) { showMsg(err.message, 'error'); }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Series — XHS Admin</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+<div class="admin-bar" id="adminBar"></div>
+
+<div class="wrap">
+  <div class="page-eyebrow">Archive</div>
+  <h1 class="page-title" id="pageTitle">Add Series</h1>
+  <p class="page-sub">A body of work grouped under one title.</p>
+
+  <div class="msg" id="msg"></div>
+
+  <form id="seriesForm" class="card">
+    <div class="field">
+      <label for="title">Title</label>
+      <input type="text" id="title" required>
+    </div>
+
+    <div class="field">
+      <label for="description">Description</label>
+      <textarea id="description" maxlength="600"></textarea>
+      <div class="char-count" id="descCount">0 / 600</div>
+    </div>
+
+    <div class="field" style="max-width:200px;">
+      <label for="year">Year</label>
+      <select id="year"></select>
+    </div>
+
+    <div class="field">
+      <label>Hero Image</label>
+      <div class="img-slots" style="grid-template-columns:1fr;max-width:320px;">
+        <div class="img-slot" id="heroSlot">
+          <div class="slot-empty">No image</div>
+        </div>
+      </div>
+      <input type="file" id="heroFile" accept="image/jpeg,image/png,image/webp" style="margin-top:12px;">
+      <div class="uploading" id="heroStatus"></div>
+      <div class="hint">JPG, PNG, or WebP. Automatically resized and optimized.</div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="btn" id="saveBtn">Save Series</button>
+      <a class="btn secondary" href="/admin/dashboard.html">Cancel</a>
+    </div>
+  </form>
+
+  <!-- Works in this series — only shown when editing an existing series. -->
+  <div id="worksSection" style="display:none;">
+    <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+      <span>Works in this Series</span>
+      <a class="btn small" id="addWorkTop" href="#">+ Add Work</a>
+    </div>
+    <div class="item-list" id="worksList"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+
+<script src="/admin/assets/admin.js"></script>
+<script>
+  const { API, requireSession, renderBar, showMsg, escapeHtml, qs } = window.Admin;
+  const editId = qs('id');
+  let heroImage = null;
+
+  (async function init() {
+    const user = await requireSession();
+    if (!user) return;
+    renderBar('series', user);
+    populateYears();
+    wireCharCount();
+    wireHeroUpload();
+    if (editId) {
+      await loadExisting();
+      setupWorksSection();
+      await loadWorks();
+    }
+    document.getElementById('seriesForm').addEventListener('submit', save);
+  })();
+
+  // Reveal and wire the "Works in this series" section (edit mode only).
+  function setupWorksSection() {
+    const sec = document.getElementById('worksSection');
+    sec.style.display = 'block';
+    document.getElementById('addWorkTop').href = '/admin/work-form.html?series=' + editId;
+  }
+
+  // Load and render the works belonging to this series.
+  async function loadWorks() {
+    const el = document.getElementById('worksList');
+    try {
+      const { works } = await API.get('/api/works?seriesId=' + encodeURIComponent(editId));
+      if (!works.length) {
+        el.innerHTML =
+          '<div class="empty" style="display:flex;flex-direction:column;gap:16px;align-items:center;">' +
+          '<span>No works yet.</span>' +
+          '<a class="btn small" href="/admin/work-form.html?series=' + editId + '">+ Add Work to this Series</a>' +
+          '</div>';
+        return;
+      }
+      el.innerHTML = works.map(rowWork).join('') +
+        '<div class="item-row" style="justify-content:center;">' +
+        '<a class="btn small" href="/admin/work-form.html?series=' + editId + '">+ Add Another Work</a>' +
+        '</div>';
+      wireWorkDeletes(el);
+    } catch (e) {
+      el.innerHTML = '<div class="empty">Failed to load works.</div>';
+    }
+  }
+
+  function rowWork(w) {
+    const hero = (w.images || []).find((i) => i.isHero) || (w.images || [])[0];
+    const thumb = hero
+      ? '<img class="thumb" src="' + escapeHtml(hero.path) + '" alt="">'
+      : '<div class="thumb"></div>';
+    const sub = [w.year || '', w.mediumType || ''].filter(Boolean).join(' · ');
+    return '<div class="item-row">' + thumb +
+      '<div class="meta"><div class="t">' + escapeHtml(w.title) + '</div>' +
+      '<div class="s">' + escapeHtml(sub) + '</div></div>' +
+      '<div class="ops">' +
+      '<a class="btn small secondary" href="/admin/work-form.html?id=' + w.id + '">Edit</a>' +
+      '<button class="btn small danger" data-id="' + w.id + '" data-title="' + escapeHtml(w.title) + '">Delete</button>' +
+      '</div></div>';
+  }
+
+  function wireWorkDeletes(container) {
+    container.querySelectorAll('button.danger').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete "' + btn.dataset.title + '"? This cannot be undone.')) return;
+        try {
+          await API.del('/api/works/' + btn.dataset.id);
+          showMsg('Deleted "' + btn.dataset.title + '".', 'success');
+          await loadWorks();
+        } catch (e) {
+          showMsg(e.message, 'error');
+        }
+      });
+    });
+  }
+
+  function populateYears() {
+    const sel = document.getElementById('year');
+    let opts = '<option value="">—</option>';
+    for (let y = 2026; y >= 1950; y--) opts += '<option value="' + y + '">' + y + '</option>';
+    sel.innerHTML = opts;
+  }
+
+  function wireCharCount() {
+    const ta = document.getElementById('description');
+    const cc = document.getElementById('descCount');
+    const upd = () => {
+      cc.textContent = ta.value.length + ' / 600';
+      cc.classList.toggle('over', ta.value.length > 600);
+    };
+    ta.addEventListener('input', upd);
+    upd();
+  }
+
+  function renderHero() {
+    const slot = document.getElementById('heroSlot');
+    if (heroImage) {
+      slot.innerHTML = '<img src="' + escapeHtml(heroImage) + '" alt="">' +
+        '<div class="slot-tools"><span>Hero image</span>' +
+        '<button type="button" id="removeHero">Remove</button></div>';
+      slot.querySelector('#removeHero').addEventListener('click', () => {
+        heroImage = null; renderHero();
+      });
+    } else {
+      slot.innerHTML = '<div class="slot-empty">No image</div>';
+    }
+  }
+
+  function wireHeroUpload() {
+    document.getElementById('heroFile').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const status = document.getElementById('heroStatus');
+      status.textContent = 'Uploading…';
+      try {
+        const fd = new FormData();
+        fd.append('image', file);
+        const res = await API.upload('/api/upload', fd);
+        heroImage = res.path;
+        renderHero();
+        status.textContent = '';
+      } catch (err) {
+        status.textContent = '';
+        showMsg(err.message, 'error');
+      }
+      e.target.value = '';
+    });
+  }
+
+  async function loadExisting() {
+    try {
+      const { series } = await API.get('/api/series/' + editId);
+      document.getElementById('pageTitle').textContent = 'Edit Series';
+      document.getElementById('title').value = series.title || '';
+      document.getElementById('description').value = series.description || '';
+      document.getElementById('year').value = series.year || '';
+      heroImage = series.heroImage || null;
+      renderHero();
+      wireCharCount();
+    } catch (e) {
+      showMsg('Could not load series: ' + e.message, 'error');
+    }
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    const payload = {
+      title: document.getElementById('title').value.trim(),
+      description: document.getElementById('description').value.trim(),
+      year: document.getElementById('year').value || null,
+      heroImage: heroImage,
+    };
+    if (!payload.title) return showMsg('Title is required.', 'error');
+    try {
+      if (editId) {
+        await API.put('/api/series/' + editId, payload);
+        showMsg('Series updated.', 'success');
+      } else {
+        const res = await API.post('/api/series', payload);
+        const newId = res && res.series && res.series.id;
+        showMsg('Series created — now add works below.', 'success');
+        // Go to this series' own edit page so the "Works in this series"
+        // section appears and works can be added right away.
+        setTimeout(function () {
+          window.location.href = newId
+            ? '/admin/series-form.html?id=' + newId
+            : '/admin/dashboard.html';
+        }, 900);
+      }
+    } catch (err) {
+      showMsg(err.message, 'error');
+    }
+  }
+</script>
+</body>
+</html>

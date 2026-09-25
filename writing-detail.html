@@ -257,7 +257,15 @@ footer{
   .reader p{font-family:var(--serif);font-size:19px;line-height:1.75;color:#333;margin-bottom:24px;}
   .reader .pq{border-left:3px solid var(--line);padding-left:32px;margin:40px 0;font-family:var(--serif);font-style:italic;font-size:24px;line-height:1.4;color:var(--black);}
   .reader .end{margin-top:60px;padding-top:30px;border-top:1px solid var(--line);font-family:var(--sans);font-size:13px;color:var(--light);}
-  @media(max-width:760px){ .reader p{font-size:17px;} }
+  .reader-body h2{font-family:var(--serif);font-size:30px;font-weight:500;line-height:1.15;margin:36px 0 14px;}
+  .reader-body h3{font-family:var(--serif);font-size:24px;font-weight:500;line-height:1.2;margin:28px 0 12px;}
+  .reader-body p{font-family:var(--serif);font-size:19px;line-height:1.75;color:#333;margin-bottom:24px;}
+  .reader-body blockquote{border-left:3px solid var(--line);padding-left:32px;margin:40px 0;font-family:var(--serif);font-style:italic;font-size:24px;line-height:1.4;color:var(--black);}
+  .reader-body ul,.reader-body ol{margin:0 0 24px 24px;font-family:var(--serif);font-size:19px;line-height:1.75;color:#333;}
+  .reader-body li{margin:8px 0;}
+  .reader-body a{color:var(--black);text-decoration:underline;}
+  .reader-body img{max-width:100%;height:auto;display:block;margin:28px 0;}
+  @media(max-width:760px){ .reader p,.reader-body p,.reader-body ul,.reader-body ol{font-size:17px;} }
 </style>
 </head>
 <body>
@@ -428,11 +436,47 @@ footer{
 </script>
 <script>
 (function(){
-  var p=new URLSearchParams(location.search);
-  var type=p.get('type'); var title=p.get('title');
   var labels={note:'Note',essay:'Essay',interview:'Interview',catalogue:'Catalogue'};
-  if(type&&labels[type]){var el=document.getElementById('metaType'); if(el) el.textContent=labels[type];}
-  if(title){try{var t=decodeURIComponent(title).replace(/&amp;/g,'&'); var h=document.querySelector('.reader h1'); if(h)h.textContent=t; document.title=t+' — Xavier Haughton Studios';}catch(e){}}
+  var p=new URLSearchParams(location.search);
+  var key=p.get('w')||p.get('id')||p.get('slug');
+
+  // Legacy behavior: ?type=&title= just relabels the static demo content.
+  function applyLegacy(){
+    var type=p.get('type'); var title=p.get('title');
+    if(type&&labels[type]){var el=document.getElementById('metaType'); if(el) el.textContent=labels[type];}
+    if(title){try{var t=decodeURIComponent(title).replace(/&amp;/g,'&'); var h=document.querySelector('.reader h1'); if(h)h.textContent=t; document.title=t+' — Xavier Haughton Studios';}catch(e){}}
+  }
+
+  if(!key){ applyLegacy(); return; }
+
+  fetch('/api/public/writings/'+encodeURIComponent(key))
+    .then(function(r){ if(!r.ok) throw new Error('not found'); return r.json(); })
+    .then(function(d){
+      var w=d&&d.writing; if(!w){ applyLegacy(); return; }
+      var mt=document.getElementById('metaType'); if(mt) mt.textContent=labels[w.type]||'';
+      var h=document.querySelector('.reader h1'); if(h) h.textContent=w.title||'';
+      var ext=document.querySelector('.reader .external'); if(ext) ext.textContent=w.date||'';
+      document.title=(w.title||'Writing')+' — Xavier Haughton Studios';
+
+      // Replace the demo body: remove existing .lead/.pq/<p> between .external
+      // and .end, then insert the stored (server-sanitized) body HTML.
+      var article=document.querySelector('.reader');
+      var end=article.querySelector('.end');
+      Array.prototype.slice.call(article.querySelectorAll('p, .pq, .lead')).forEach(function(n){ n.remove(); });
+      var holder=document.createElement('div');
+      holder.className='reader-body';
+      holder.innerHTML=w.body||'';
+      if(end) article.insertBefore(holder,end); else article.appendChild(holder);
+
+      // If it was published externally, offer a link out.
+      if(w.externalUrl){
+        var a=document.createElement('a');
+        a.href=w.externalUrl; a.target='_blank'; a.rel='noopener';
+        a.className='back'; a.style.marginTop='30px'; a.textContent='Read the full piece externally ↗';
+        if(end) article.insertBefore(a,end); else article.appendChild(a);
+      }
+    })
+    .catch(function(){ applyLegacy(); });
 })();
 </script>
 </body>

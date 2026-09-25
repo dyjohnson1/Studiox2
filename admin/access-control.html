@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Access Control — XHS Admin</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+<div class="admin-bar" id="adminBar"></div>
+
+<div class="wrap">
+  <div class="page-eyebrow">Studio Administration</div>
+  <h1 class="page-title">Access Control</h1>
+  <p class="page-sub">Manage who can administer the archive.</p>
+
+  <div class="msg" id="msg"></div>
+
+  <div class="section-label">Admin Users</div>
+  <div class="item-list" id="userList"><div class="empty">Loading…</div></div>
+
+  <div class="card" style="margin-top:30px;">
+    <h3 style="font-family:var(--serif);font-size:22px;font-weight:500;margin-bottom:20px;">Add New User</h3>
+    <form id="addForm">
+      <div class="row">
+        <div class="field">
+          <label for="newUser">Username</label>
+          <input type="text" id="newUser" autocomplete="off" required>
+        </div>
+        <div class="field">
+          <label for="newPass">Password</label>
+          <input type="password" id="newPass" autocomplete="new-password" required>
+          <div class="hint">At least 6 characters.</div>
+        </div>
+      </div>
+      <div class="actions"><button type="submit" class="btn">Add User</button></div>
+    </form>
+  </div>
+</div>
+
+<script src="/admin/assets/admin.js"></script>
+<script>
+  const { API, requireSession, renderBar, showMsg, escapeHtml } = window.Admin;
+  let currentUser = null;
+
+  (async function init() {
+    currentUser = await requireSession();
+    if (!currentUser) return;
+    renderBar('access', currentUser);
+    await loadUsers();
+    document.getElementById('addForm').addEventListener('submit', addUser);
+  })();
+
+  async function loadUsers() {
+    const el = document.getElementById('userList');
+    try {
+      const { users } = await API.get('/api/users');
+      if (!users.length) { el.innerHTML = '<div class="empty">No users.</div>'; return; }
+      el.innerHTML = users.map((u) => rowUser(u)).join('');
+      wireRowActions(el);
+    } catch (e) {
+      el.innerHTML = '<div class="empty">Failed to load users.</div>';
+    }
+  }
+
+  function rowUser(u) {
+    const isSelf = currentUser && u.id === currentUser.id;
+    const created = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '';
+    return '<div class="item-row">' +
+      '<div class="meta"><div class="t">' + escapeHtml(u.username) +
+      (isSelf ? ' <span style="font-family:var(--sans);font-style:normal;font-size:11px;color:var(--light);">(you)</span>' : '') +
+      '</div><div class="s">Added ' + escapeHtml(created) + '</div></div>' +
+      '<div class="ops">' +
+      '<button class="btn small secondary" data-act="pw" data-id="' + u.id + '" data-name="' + escapeHtml(u.username) + '">Change Password</button>' +
+      (isSelf ? '' : '<button class="btn small danger" data-act="del" data-id="' + u.id + '" data-name="' + escapeHtml(u.username) + '">Remove</button>') +
+      '</div></div>';
+  }
+
+  function wireRowActions(el) {
+    el.querySelectorAll('[data-act]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const name = btn.dataset.name;
+        if (btn.dataset.act === 'del') {
+          if (!confirm('Remove user "' + name + '"?')) return;
+          try { await API.del('/api/users/' + id); showMsg('Removed "' + name + '".', 'success'); await loadUsers(); }
+          catch (e) { showMsg(e.message, 'error'); }
+        } else if (btn.dataset.act === 'pw') {
+          const pw = prompt('New password for "' + name + '" (min 6 chars):');
+          if (pw === null) return;
+          try { await API.put('/api/users/' + id + '/password', { password: pw }); showMsg('Password updated for "' + name + '".', 'success'); }
+          catch (e) { showMsg(e.message, 'error'); }
+        }
+      });
+    });
+  }
+
+  async function addUser(e) {
+    e.preventDefault();
+    const username = document.getElementById('newUser').value.trim();
+    const password = document.getElementById('newPass').value;
+    try {
+      await API.post('/api/users', { username, password });
+      showMsg('User "' + username + '" added.', 'success');
+      document.getElementById('addForm').reset();
+      await loadUsers();
+    } catch (err) {
+      showMsg(err.message, 'error');
+    }
+  }
+</script>
+</body>
+</html>

@@ -503,5 +503,64 @@ footer{
   search.addEventListener('input',apply);
 </script>
 
+<!-- ============================================================
+     DYNAMIC EXHIBITIONS — from the local CMS, with fallback to the
+     hardcoded list above when the API is unavailable or empty.
+     ============================================================ -->
+<script>
+(function () {
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  fetch('/api/public/exhibitions').then(function(r){if(!r.ok)throw new Error('bad');return r.json();})
+    .then(function(d){
+      var list=(d&&d.exhibitions)||[];
+      if(!list.length) return; // keep fallback
+      var listEl=document.getElementById('exhList');
+      if(!listEl) return;
+
+      // Rebuild the exhibition rows.
+      listEl.innerHTML=list.map(function(x){
+        var statusCls=x.status==='current'?'status':(x.status==='upcoming'?'status muted':'status past');
+        var statusLabel=x.status?x.status.charAt(0).toUpperCase()+x.status.slice(1):'';
+        var venue=[x.venue,x.location].filter(Boolean).join('<br>');
+        var yr=x.dateLabel||(x.year||'');
+        return '<a class="exh-item reveal in" data-year="'+esc(x.year||'')+'" href="exhibition-detail.html?ex='+esc(x.slug||x.id)+'">'+
+          '<div class="ttl">'+esc(x.title)+'</div>'+
+          '<div class="venue">'+venue+'</div>'+
+          '<div class="right"><span class="yr">'+esc(yr)+'</span>'+
+          (statusLabel?'<span class="'+statusCls+'">'+esc(statusLabel)+'</span>':'')+'</div></a>';
+      }).join('');
+
+      // Rebuild year filter buttons from the data.
+      var years=Array.from(new Set(list.map(function(x){return x.year;}).filter(Boolean))).sort(function(a,b){return b-a;});
+      var yf=document.getElementById('yearFilters');
+      if(yf){
+        yf.innerHTML='<span class="filter-label">Year</span>'+
+          '<button class="filter-btn active" data-year="all">All</button>'+
+          years.map(function(y){return '<button class="filter-btn" data-year="'+y+'">'+y+'</button>';}).join('');
+      }
+
+      // Re-bind filter logic against the new DOM (the original closure
+      // captured the old nodes, so we wire a fresh, equivalent handler).
+      var items=[].slice.call(document.querySelectorAll('.exh-item'));
+      var yearBtns=[].slice.call(document.querySelectorAll('#yearFilters .filter-btn'));
+      var search=document.getElementById('exhSearch');
+      var activeYear='all';
+      function apply(){
+        var q=(search.value||'').trim().toLowerCase();
+        items.forEach(function(it){
+          var matchYear=activeYear==='all'||it.dataset.year===activeYear;
+          var matchText=!q||it.textContent.toLowerCase().indexOf(q)>-1;
+          it.classList.toggle('hide',!(matchYear&&matchText));
+        });
+      }
+      yearBtns.forEach(function(b){b.addEventListener('click',function(){
+        yearBtns.forEach(function(x){x.classList.remove('active');});
+        b.classList.add('active');activeYear=b.dataset.year;apply();
+      });});
+      if(search) search.addEventListener('input',apply);
+    }).catch(function(){ /* keep fallback */ });
+})();
+</script>
+
 </body>
 </html>

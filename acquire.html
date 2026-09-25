@@ -315,6 +315,7 @@ footer{
     <p class="page-intro">Original works and limited editions. For original work, the studio responds to each inquiry personally.</p>
   </div>
 
+  <div id="acqSections">
   <!-- ORIGINALS -->
   <div class="group-head reveal">
     <h2>Originals</h2>
@@ -389,6 +390,7 @@ footer{
       </div>
     </a>
   </div>
+  </div><!-- /#acqSections -->
 </main>
 
 <footer>
@@ -516,5 +518,56 @@ footer{
 })();
 
 </script>
+
+<!-- ============================================================
+     DYNAMIC ACQUIRE — Originals + Editions from the local CMS,
+     with fallback to the hardcoded content above.
+     ============================================================ -->
+<script>
+(function () {
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  var GRAD=['g1','g2','g3','g4','g5','g6'];
+
+  function itemHtml(it,i){
+    var inner=it.image
+      ? '<div class="img"><div style="position:absolute;inset:0;background-image:url(\''+esc(it.image)+'\');background-size:cover;background-position:center;"></div></div>'
+      : '<div class="img"><div class="'+GRAD[i%GRAD.length]+'"></div></div>';
+    // Determine the action label / sold styling from status.
+    var st=(it.status||'').toLowerCase();
+    var actClass='act', actLabel;
+    if(st==='sold out'){actClass='act sold';actLabel='Sold Out';}
+    else if(st==='in collection'){actClass='act sold';actLabel='In Collection';}
+    else if(it.category==='edition'){actClass='act';actLabel='Acquire';}
+    else {actClass='act inquire';actLabel='Inquire';}
+    var price=(it.category==='edition'&&it.price)?'<div class="price">'+esc(it.price)+'</div>':'';
+    return '<a class="item reveal in" href="product-detail.html?work='+esc(it.slug||it.id)+'">'+inner+
+      '<div class="info"><div class="t">'+esc(it.title)+'</div>'+
+      '<div class="m">'+esc(it.details||'')+'</div>'+price+
+      '<span class="'+actClass+'">'+actLabel+'</span></div></a>';
+  }
+
+  function groupHtml(title,note,items,marginTop){
+    if(!items.length) return '';
+    var style=marginTop?' style="margin-top:90px;"':'';
+    return '<div class="group-head reveal in"'+style+'><h2>'+esc(title)+'</h2>'+
+      '<span class="note">'+esc(note)+'</span></div>'+
+      '<div class="grid">'+items.map(itemHtml).join('')+'</div>';
+  }
+
+  fetch('/api/public/acquire').then(function(r){if(!r.ok)throw new Error('bad');return r.json();})
+    .then(function(d){
+      var list=(d&&d.items)||[];
+      if(!list.length) return; // keep fallback
+      var wrap=document.getElementById('acqSections');
+      if(!wrap) return;
+      var originals=list.filter(function(i){return i.category==='original';});
+      var editions=list.filter(function(i){return i.category==='edition';});
+      wrap.innerHTML=
+        groupHtml('Originals','Inquiry only',originals,false)+
+        groupHtml('Editions & Multiples','Available to purchase',editions,originals.length>0);
+    }).catch(function(){ /* keep fallback */ });
+})();
+</script>
+
 </body>
 </html>

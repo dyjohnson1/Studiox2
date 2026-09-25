@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Work — XHS Admin</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+<div class="admin-bar" id="adminBar"></div>
+
+<div class="wrap">
+  <div class="page-eyebrow">Archive</div>
+  <h1 class="page-title" id="pageTitle">Add Work</h1>
+  <p class="page-sub">A single piece — with images, materials, and provenance.</p>
+
+  <div class="msg" id="msg"></div>
+
+  <form id="workForm" class="card">
+    <div class="field">
+      <label for="series">Series</label>
+      <select id="series"></select>
+      <div class="hint">Choose an existing series, or leave as “Solo work (no series)”.</div>
+    </div>
+
+    <div class="field">
+      <label for="title">Title</label>
+      <input type="text" id="title" required>
+    </div>
+
+    <div class="field">
+      <label>Materials</label>
+      <div class="checks" id="materials"></div>
+      <input type="text" id="materialsOther" placeholder="Other materials (comma-separated)" style="margin-top:12px;">
+    </div>
+
+    <div class="field">
+      <label>Media <span style="text-transform:none;letter-spacing:0;color:var(--light);">(up to 5 images or videos — pick a hero, reorder with arrows)</span></label>
+      <input type="file" id="imageFile" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm">
+      <div class="hint">Images: JPG, PNG, WebP (max 15MB). Videos: MP4, WebM (max 100MB).</div>
+      <div class="uploading" id="imgStatus"></div>
+      <div class="img-slots" id="imgSlots"></div>
+    </div>
+
+    <div class="row">
+      <div class="field" style="max-width:180px;">
+        <label for="year">Year</label>
+        <select id="year"></select>
+      </div>
+      <div class="field">
+        <label for="mediumType">Medium Type</label>
+        <div class="radios" id="mediumType">
+          <label><input type="radio" name="medium" value="painting"> Painting</label>
+          <label><input type="radio" name="medium" value="sculpture"> Sculpture</label>
+          <label><input type="radio" name="medium" value="works-on-paper"> Works on Paper</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Dimensions (inches)</label>
+      <div class="row">
+        <div class="field"><label for="dH" style="text-transform:none;letter-spacing:0;color:var(--light);">Height</label><input type="number" id="dH" step="0.1" min="0"></div>
+        <div class="field"><label for="dW" style="text-transform:none;letter-spacing:0;color:var(--light);">Width</label><input type="number" id="dW" step="0.1" min="0"></div>
+        <div class="field"><label for="dD" style="text-transform:none;letter-spacing:0;color:var(--light);">Depth (optional)</label><input type="number" id="dD" step="0.1" min="0"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="description">Description</label>
+      <textarea id="description" maxlength="500"></textarea>
+      <div class="char-count" id="descCount">0 / 500</div>
+    </div>
+
+    <div class="field">
+      <label>Collection Status</label>
+      <div class="radios" id="collectionStatus">
+        <label><input type="radio" name="status" value="in private collection"> In private collection</label>
+        <label><input type="radio" name="status" value="in exhibition"> In exhibition</label>
+        <label><input type="radio" name="status" value="available for purchase"> Available for purchase</label>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="btn" id="saveBtn">Save Work</button>
+      <a class="btn secondary" href="/admin/dashboard.html">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script src="/admin/assets/admin.js"></script>
+<script>
+  const { API, requireSession, renderBar, showMsg, escapeHtml, qs } = window.Admin;
+  const editId = qs('id');
+  const preselectSeries = qs('series'); // when arriving from a series page
+  const MATERIAL_OPTIONS = ['oil','watercolor','acrylic','charcoal','ink','bronze','metals','glass','wood','linen','canvas','mixed media'];
+  let images = []; // {path, order, isHero}
+
+  (async function init() {
+    const user = await requireSession();
+    if (!user) return;
+    renderBar('work', user);
+    populateYears();
+    renderMaterials();
+    wireCharCount();
+    wireImageUpload();
+    await loadSeriesOptions();
+    if (editId) await loadExisting();
+    else if (preselectSeries) applyPreselectedSeries();
+    renderImages();
+    document.getElementById('workForm').addEventListener('submit', save);
+  })();
+
+  function populateYears() {
+    const sel = document.getElementById('year');
+    let opts = '<option value="">—</option>';
+    for (let y = 2026; y >= 1950; y--) opts += '<option value="' + y + '">' + y + '</option>';
+    sel.innerHTML = opts;
+  }
+
+  function renderMaterials() {
+    const el = document.getElementById('materials');
+    el.innerHTML = MATERIAL_OPTIONS.map((m) =>
+      '<label><input type="checkbox" value="' + m + '"> ' + m + '</label>'
+    ).join('');
+  }
+
+  async function loadSeriesOptions() {
+    const sel = document.getElementById('series');
+    try {
+      const { series } = await API.get('/api/series');
+      let opts = '<option value="">Solo work (no series)</option>';
+      series.forEach((s) => {
+        opts += '<option value="' + s.id + '">' + escapeHtml(s.title) + '</option>';
+      });
+      sel.innerHTML = opts;
+    } catch (e) {
+      sel.innerHTML = '<option value="">Solo work (no series)</option>';
+    }
+  }
+
+  // When arriving from a series page (?series=ID), preselect that series
+  // and show a note so it's clear where the work will be filed.
+  function applyPreselectedSeries() {
+    const sel = document.getElementById('series');
+    const opt = sel.querySelector('option[value="' + (window.CSS ? CSS.escape(preselectSeries) : preselectSeries) + '"]');
+    if (opt) {
+      sel.value = preselectSeries;
+      const name = opt.textContent;
+      const hint = sel.parentElement.querySelector('.hint');
+      if (hint) hint.textContent = 'Adding to series: “' + name + '”. You can change this if needed.';
+    }
+  }
+
+  function wireCharCount() {
+    const ta = document.getElementById('description');
+    const cc = document.getElementById('descCount');
+    const upd = () => {
+      cc.textContent = ta.value.length + ' / 500';
+      cc.classList.toggle('over', ta.value.length > 500);
+    };
+    ta.addEventListener('input', upd);
+    upd();
+  }
+
+  function wireImageUpload() {
+    document.getElementById('imageFile').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (images.length >= 5) {
+        showMsg('You can add at most 5 media items.', 'error');
+        e.target.value = '';
+        return;
+      }
+      const status = document.getElementById('imgStatus');
+      status.textContent = 'Uploading…';
+      try {
+        const fd = new FormData();
+        fd.append('media', file);
+        const res = await API.upload('/api/upload', fd);
+        images.push({
+          type: res.type || 'image',
+          path: res.path,
+          order: images.length + 1,
+          isHero: images.length === 0,
+        });
+        if (!images.some((i) => i.isHero)) images[0].isHero = true;
+        renderImages();
+        status.textContent = '';
+      } catch (err) {
+        status.textContent = '';
+        showMsg(err.message, 'error');
+      }
+      e.target.value = '';
+    });
+  }
+
+  function mediaPreview(item) {
+    if (item.type === 'video') {
+      return '<video src="' + escapeHtml(item.path) + '" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>' +
+        '<span style="position:absolute;top:6px;right:6px;background:rgba(17,17,17,.75);color:#fff;font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;">Video</span>';
+    }
+    return '<img src="' + escapeHtml(item.path) + '" alt="">';
+  }
+
+  function renderImages() {
+    const el = document.getElementById('imgSlots');
+    images.sort((a, b) => a.order - b.order);
+    images.forEach((img, i) => { img.order = i + 1; });
+    if (!images.some((i) => i.isHero) && images.length) images[0].isHero = true;
+
+    let html = '';
+    for (let i = 0; i < 5; i++) {
+      const img = images[i];
+      if (img) {
+        html += '<div class="img-slot">' +
+          mediaPreview(img) +
+          '<div class="reorder">' +
+          (i > 0 ? '<button type="button" data-act="up" data-i="' + i + '">↑</button>' : '') +
+          (i < images.length - 1 ? '<button type="button" data-act="down" data-i="' + i + '">↓</button>' : '') +
+          '</div>' +
+          '<div class="slot-tools">' +
+          '<label><input type="radio" name="hero" data-i="' + i + '"' + (img.isHero ? ' checked' : '') + '> Hero</label>' +
+          '<button type="button" data-act="remove" data-i="' + i + '">Remove</button>' +
+          '</div></div>';
+      } else {
+        html += '<div class="img-slot"><div class="slot-empty">Empty slot</div></div>';
+      }
+    }
+    el.innerHTML = html;
+
+    el.querySelectorAll('[data-act]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const i = parseInt(btn.dataset.i, 10);
+        const act = btn.dataset.act;
+        if (act === 'remove') images.splice(i, 1);
+        else if (act === 'up') swap(i, i - 1);
+        else if (act === 'down') swap(i, i + 1);
+        if (images.length && !images.some((x) => x.isHero)) images[0].isHero = true;
+        renderImages();
+      });
+    });
+    el.querySelectorAll('input[name="hero"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        const i = parseInt(radio.dataset.i, 10);
+        images.forEach((img, idx) => { img.isHero = idx === i; });
+      });
+    });
+  }
+
+  function swap(a, b) {
+    if (b < 0 || b >= images.length) return;
+    const tmp = images[a]; images[a] = images[b]; images[b] = tmp;
+    images.forEach((img, i) => { img.order = i + 1; });
+  }
+
+  async function loadExisting() {
+    try {
+      const { work } = await API.get('/api/works/' + editId);
+      document.getElementById('pageTitle').textContent = 'Edit Work';
+      document.getElementById('title').value = work.title || '';
+      document.getElementById('series').value = work.seriesId || '';
+      document.getElementById('year').value = work.year || '';
+      document.getElementById('description').value = work.description || '';
+
+      // materials
+      const known = new Set(MATERIAL_OPTIONS);
+      const other = [];
+      (work.materials || []).forEach((m) => {
+        const box = document.querySelector('#materials input[value="' + CSS.escape(m) + '"]');
+        if (box) box.checked = true; else if (known.has(m)) {} else other.push(m);
+      });
+      document.getElementById('materialsOther').value = other.join(', ');
+
+      // medium + status
+      if (work.mediumType) {
+        const r = document.querySelector('#mediumType input[value="' + work.mediumType + '"]');
+        if (r) r.checked = true;
+      }
+      if (work.collectionStatus) {
+        const r = document.querySelector('#collectionStatus input[value="' + CSS.escape(work.collectionStatus) + '"]');
+        if (r) r.checked = true;
+      }
+
+      // dimensions
+      const d = work.dimensions || {};
+      if (d.height != null) document.getElementById('dH').value = d.height;
+      if (d.width != null) document.getElementById('dW').value = d.width;
+      if (d.depth != null) document.getElementById('dD').value = d.depth;
+
+      images = (work.images || []).map((img, i) => ({
+        type: img.type === 'video' ? 'video' : 'image',
+        path: img.path, order: img.order || i + 1, isHero: !!img.isHero,
+      }));
+      wireCharCount();
+    } catch (e) {
+      showMsg('Could not load work: ' + e.message, 'error');
+    }
+  }
+
+  function collectMaterials() {
+    const checked = [...document.querySelectorAll('#materials input:checked')].map((c) => c.value);
+    const other = document.getElementById('materialsOther').value
+      .split(',').map((s) => s.trim()).filter(Boolean);
+    return [...checked, ...other];
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    const medium = document.querySelector('#mediumType input:checked');
+    const status = document.querySelector('#collectionStatus input:checked');
+    const payload = {
+      title: document.getElementById('title').value.trim(),
+      seriesId: document.getElementById('series').value || null,
+      materials: collectMaterials(),
+      year: document.getElementById('year').value || null,
+      description: document.getElementById('description').value.trim(),
+      mediumType: medium ? medium.value : null,
+      collectionStatus: status ? status.value : null,
+      dimensions: {
+        height: document.getElementById('dH').value || null,
+        width: document.getElementById('dW').value || null,
+        depth: document.getElementById('dD').value || null,
+      },
+      images: images.map((img, i) => ({ type: img.type || 'image', path: img.path, order: i + 1, isHero: !!img.isHero })),
+    };
+    if (!payload.title) return showMsg('Title is required.', 'error');
+    try {
+      if (editId) {
+        await API.put('/api/works/' + editId, payload);
+        showMsg('Work updated.', 'success');
+      } else {
+        await API.post('/api/works', payload);
+        showMsg('Work created. Redirecting…', 'success');
+        // If we came from a series page (or the work was filed into a series),
+        // return to that series so more works can be added easily.
+        var backSeries = preselectSeries || payload.seriesId;
+        var dest = backSeries
+          ? '/admin/series-form.html?id=' + backSeries
+          : '/admin/dashboard.html';
+        setTimeout(function () { window.location.href = dest; }, 900);
+      }
+    } catch (err) {
+      showMsg(err.message, 'error');
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "xavier-haughton-studios-cms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local CMS for Xavier Haughton Studios portfolio site",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node server/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "2.4.3",
+    "express": "4.19.2",
+    "express-session": "1.18.0",
+    "multer": "2.0.1",
+    "sharp": "0.33.4",
+    "uuid": "9.0.1"
+  }
+}

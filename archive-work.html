@@ -265,6 +265,26 @@ footer{
   .lightbox .big{width:70vw;max-width:760px;aspect-ratio:4/5;background:radial-gradient(ellipse at 45% 35%,#3a3530,#15110e);}
   .lightbox .lb-close{position:absolute;top:24px;right:32px;font-family:var(--sans);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--light);}
   @media(max-width:760px){.aw{grid-template-columns:1fr;gap:30px;}.aw-details{position:static;}}
+  /* ---------- MEDIA CAROUSEL ---------- */
+  .aw-carousel{position:relative;width:100%;}
+  .aw-stage{position:relative;width:100%;aspect-ratio:4/5;background:#ecebe8;overflow:hidden;}
+  .aw-slide{position:absolute;inset:0;opacity:0;transition:opacity .5s ease;pointer-events:none;}
+  .aw-slide.active{opacity:1;pointer-events:auto;}
+  .aw-slide img,.aw-slide video{width:100%;height:100%;object-fit:cover;display:block;}
+  .aw-arrow{
+    position:absolute;top:50%;transform:translateY(-50%);z-index:4;
+    width:44px;height:44px;border:none;cursor:pointer;
+    background:rgba(255,255,255,.85);color:#111;font-size:20px;line-height:44px;
+    transition:background .2s ease,opacity .2s ease;
+  }
+  .aw-arrow:hover{background:#fff;}
+  .aw-arrow.prev{left:14px;}
+  .aw-arrow.next{right:14px;}
+  .aw-arrow[disabled]{opacity:0;pointer-events:none;}
+  .aw-dots{display:flex;gap:8px;justify-content:center;margin-top:16px;}
+  .aw-dots button{width:8px;height:8px;border-radius:50%;border:none;cursor:pointer;background:var(--line);padding:0;transition:background .2s ease;}
+  .aw-dots button.active{background:var(--black);}
+  .aw-counter{position:absolute;bottom:14px;left:14px;z-index:4;font-family:var(--sans);font-size:11px;letter-spacing:.1em;color:#fff;background:rgba(17,17,17,.6);padding:4px 9px;}
 </style>
 </head>
 <body>
@@ -291,7 +311,14 @@ footer{
 
 <main class="page">
   <div class="aw">
-    <div class="aw-image reveal" id="awImage"><div class="zoom-hint">Click to enlarge</div></div>
+    <div class="aw-carousel reveal" id="awCarousel">
+      <div class="aw-stage" id="awStage">
+        <div class="aw-slide active"><div style="position:absolute;inset:0;background:radial-gradient(ellipse at 45% 35%,#3a3530,#15110e);"></div></div>
+      </div>
+      <button class="aw-arrow prev" id="awPrev" aria-label="Previous" disabled>‹</button>
+      <button class="aw-arrow next" id="awNext" aria-label="Next" disabled>›</button>
+      <div class="aw-counter" id="awCounter" style="display:none;"></div>
+    </div>
     <div class="aw-details reveal">
       <a href="archive.html" class="aw-back">← Archive</a>
       <div class="aw-series" id="awSeries">From the <a href="archive.html">Interior Light</a> series</div>
@@ -400,35 +427,153 @@ footer{
 </script>
 <script>
   const lb=document.getElementById('lightbox');
-  document.getElementById('awImage').addEventListener('click',()=>lb.classList.add('open'));
+  const lbBig=document.getElementById('lbBig');
   lb.addEventListener('click',()=>lb.classList.remove('open'));
 
   const data={
     'after-the-light':{t:'After the Light',s:'Interior Light',m:'Oil and mixed media on linen',d:'72 × 54 in',y:'2026',st:'In Private Collection',grad:'radial-gradient(ellipse at 45% 35%,#3a3530,#15110e)',desc:'A central work from the series, returning to the threshold motif that defines the recent practice — the doorway as a site of memory and passage.'},
-    'the-witness':{t:'The Witness',s:'Interior Light',m:'Oil on linen',d:'60 × 48 in',y:'2025',st:'In Private Collection',grad:'linear-gradient(160deg,#5b5044,#221c16)',desc:'A figure rendered at the edge of legibility, holding the viewer\\'s gaze without returning it.'},
-    'vessel-i':{t:'Vessel I',s:'Interior Light',m:'Bronze, patina',d:'28 in',y:'2026',st:'Artist\\'s Collection',grad:'radial-gradient(ellipse at 40% 35%,#4a4036,#15110e)',desc:'The first of the Vessel sculptures — a form that holds absence as much as presence.'},
+    'the-witness':{t:'The Witness',s:'Interior Light',m:'Oil on linen',d:'60 × 48 in',y:'2025',st:'In Private Collection',grad:'linear-gradient(160deg,#5b5044,#221c16)',desc:'A figure rendered at the edge of legibility, holding the viewer\'s gaze without returning it.'},
+    'vessel-i':{t:'Vessel I',s:'Interior Light',m:'Bronze, patina',d:'28 in',y:'2026',st:'Artist\'s Collection',grad:'radial-gradient(ellipse at 40% 35%,#4a4036,#15110e)',desc:'The first of the Vessel sculptures — a form that holds absence as much as presence.'},
     'study-for-memory':{t:'Study for Memory',s:'Interior Light',m:'Charcoal on paper',d:'24 × 30 in',y:'2026',st:'Archive',grad:'linear-gradient(160deg,#322d2a,#0f0d0b)',desc:'A preparatory study, drawn from the central painting of the series.'},
     'inheritance':{t:'Inheritance',s:'What the Body Remembers',m:'Oil on linen',d:'66 × 50 in',y:'2025',st:'In Private Collection',grad:'radial-gradient(ellipse at 50% 60%,#594b3d,#1c1713)',desc:'On what passes between generations through gesture, image, and object.'},
     'the-keeping-room':{t:'The Keeping Room',s:'What the Body Remembers',m:'Oil on linen',d:'48 × 36 in',y:'2025',st:'In Private Collection',grad:'linear-gradient(140deg,#39322c,#100d0b)',desc:'The room where a family keeps what cannot be said aloud.'},
-    'vessel-ii':{t:'Vessel II',s:'What the Body Remembers',m:'Bronze',d:'31 in',y:'2024',st:'Artist\\'s Collection',grad:'radial-gradient(ellipse at 45% 40%,#463a2e,#14100d)',desc:'The second Vessel, taller and more closed than the first.'},
+    'vessel-ii':{t:'Vessel II',s:'What the Body Remembers',m:'Bronze',d:'31 in',y:'2024',st:'Artist\'s Collection',grad:'radial-gradient(ellipse at 45% 40%,#463a2e,#14100d)',desc:'The second Vessel, taller and more closed than the first.'},
     'litany':{t:'Litany',s:'What the Body Remembers',m:'Ink on paper',d:'22 × 30 in',y:'2024',st:'Archive',grad:'linear-gradient(165deg,#4f4439,#1a1511)',desc:'A sequence of marks made as a kind of prayer.'},
     'first-light-archive':{t:'First Light',s:'First Light',m:'Oil on linen',d:'54 × 40 in',y:'2024',st:'In Private Collection',grad:'linear-gradient(160deg,#43392f,#191512)',desc:'The painting that named the earliest series.'},
     'morning-prayer':{t:'Morning Prayer',s:'First Light',m:'Oil on linen',d:'40 × 30 in',y:'2023',st:'In Private Collection',grad:'linear-gradient(150deg,#322d2a,#0f0d0b)',desc:'Light entering a room at the start of the day.'},
-    'offering':{t:'Offering',s:'First Light',m:'Carved wood',d:'19 in',y:'2023',st:'Artist\\'s Collection',grad:'radial-gradient(ellipse at 40% 30%,#463a2e,#14100d)',desc:'A small carved form, made to be held.'}
+    'offering':{t:'Offering',s:'First Light',m:'Carved wood',d:'19 in',y:'2023',st:'Artist\'s Collection',grad:'radial-gradient(ellipse at 40% 30%,#463a2e,#14100d)',desc:'A small carved form, made to be held.'}
   };
+
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   const slug=new URLSearchParams(location.search).get('work');
-  if(slug&&data[slug]){
-    const w=data[slug];
-    document.getElementById('awTitle').textContent=w.t;
-    document.getElementById('awSeries').innerHTML='From the <a href="archive.html">'+w.s+'</a> series';
-    document.getElementById('awMedium').textContent=w.m;
-    document.getElementById('awDim').textContent=w.d;
-    document.getElementById('awYear').textContent=w.y;
-    document.getElementById('awStatus').textContent=w.st;
-    document.getElementById('awDesc').textContent=w.desc;
-    document.getElementById('awImage').style.background=w.grad;
-    document.getElementById('lbBig').style.background=w.grad;
-    document.title=w.t+' — Archive — Xavier Haughton Studios';
+
+  // ---------- Carousel ----------
+  var slides=[], idx=0;
+  var stage=document.getElementById('awStage');
+  var prevBtn=document.getElementById('awPrev');
+  var nextBtn=document.getElementById('awNext');
+  var counter=document.getElementById('awCounter');
+
+  function show(n){
+    if(!slides.length) return;
+    idx=(n+slides.length)%slides.length;
+    var kids=stage.querySelectorAll('.aw-slide');
+    kids.forEach(function(k,i){
+      k.classList.toggle('active',i===idx);
+      var v=k.querySelector('video');
+      if(v&&i!==idx){ try{v.pause();}catch(e){} }
+    });
+    var dots=document.querySelectorAll('#awDots button');
+    dots.forEach(function(dt,i){dt.classList.toggle('active',i===idx);});
+    counter.textContent=(idx+1)+' / '+slides.length;
+  }
+
+  // Build carousel from a list of media items [{type,path}]. If none, use gradient.
+  function buildCarousel(media, gradFallback){
+    slides = media && media.length ? media.slice(0,5) : [];
+    if(!slides.length){
+      stage.innerHTML='<div class="aw-slide active"><div style="position:absolute;inset:0;background:'+(gradFallback||'radial-gradient(ellipse at 45% 35%,#3a3530,#15110e)')+';"></div></div>';
+      prevBtn.disabled=true; nextBtn.disabled=true; counter.style.display='none';
+      return;
+    }
+    stage.innerHTML=slides.map(function(item,i){
+      var inner = item.type==='video'
+        ? '<video src="'+esc(item.path)+'" controls playsinline preload="metadata"></video>'
+        : '<img src="'+esc(item.path)+'" alt="" data-full="'+esc(item.path)+'">';
+      return '<div class="aw-slide'+(i===0?' active':'')+'">'+inner+'</div>';
+    }).join('');
+
+    var multi = slides.length>1;
+    prevBtn.disabled=!multi; nextBtn.disabled=!multi;
+    counter.style.display = multi ? 'block' : 'none';
+    counter.textContent='1 / '+slides.length;
+
+    // Dots (only if multiple).
+    var existingDots=document.getElementById('awDots');
+    if(existingDots) existingDots.remove();
+    if(multi){
+      var dots=document.createElement('div');
+      dots.className='aw-dots'; dots.id='awDots';
+      dots.innerHTML=slides.map(function(_,i){return '<button type="button" aria-label="Go to '+(i+1)+'"'+(i===0?' class="active"':'')+'></button>';}).join('');
+      document.getElementById('awCarousel').insertAdjacentElement('afterend',dots);
+      dots.querySelectorAll('button').forEach(function(b,i){b.addEventListener('click',function(){show(i);});});
+    }
+
+    // Clicking an image slide opens the lightbox with that image.
+    stage.querySelectorAll('img[data-full]').forEach(function(im){
+      im.style.cursor='zoom-in';
+      im.addEventListener('click',function(){
+        lbBig.style.background='#000';
+        lbBig.innerHTML='<img src="'+esc(im.getAttribute('data-full'))+'" alt="" style="width:100%;height:100%;object-fit:contain;">';
+        lb.classList.add('open');
+      });
+    });
+
+    idx=0;
+  }
+
+  prevBtn.addEventListener('click',function(e){e.stopPropagation();show(idx-1);});
+  nextBtn.addEventListener('click',function(e){e.stopPropagation();show(idx+1);});
+  document.addEventListener('keydown',function(e){
+    if(!slides.length) return;
+    if(e.key==='ArrowLeft') show(idx-1);
+    else if(e.key==='ArrowRight') show(idx+1);
+  });
+
+  // Apply the static fallback for a known slug (used when API has no data).
+  function applyStatic(){
+    if(slug&&data[slug]){
+      var w=data[slug];
+      document.getElementById('awTitle').textContent=w.t;
+      document.getElementById('awSeries').innerHTML='From the <a href="archive.html">'+w.s+'</a> series';
+      document.getElementById('awMedium').textContent=w.m;
+      document.getElementById('awDim').textContent=w.d;
+      document.getElementById('awYear').textContent=w.y;
+      document.getElementById('awStatus').textContent=w.st;
+      document.getElementById('awDesc').textContent=w.desc;
+      document.title=w.t+' — Archive — Xavier Haughton Studios';
+      buildCarousel([], w.grad);
+    } else {
+      buildCarousel([], null);
+    }
+  }
+
+  // Try the API first (by slug); fall back to static content.
+  if(slug){
+    fetch('/api/public/works').then(function(r){if(!r.ok)throw new Error('bad');return r.json();})
+      .then(function(d){
+        var works=(d&&d.works)||[];
+        var w=works.filter(function(x){return (x.slug||x.id)===slug;})[0];
+        if(!w){ applyStatic(); return; }
+        // Populate details from the record.
+        document.getElementById('awTitle').textContent=w.title||'';
+        var materials=(w.materials||[]).join(', ');
+        var dims=w.dimensions||{};
+        var dimStr=[dims.height,dims.width].filter(function(v){return v!=null;}).join(' × ');
+        if(dimStr && dims.depth!=null) dimStr+=' × '+dims.depth;
+        if(dimStr) dimStr+=' in';
+        document.getElementById('awMedium').textContent=materials||(w.mediumType||'');
+        document.getElementById('awDim').textContent=dimStr||'—';
+        document.getElementById('awYear').textContent=w.year||'—';
+        if(w.collectionStatus) document.getElementById('awStatus').textContent=w.collectionStatus.replace(/\b\w/g,function(c){return c.toUpperCase();});
+        else document.getElementById('awStatus').style.display='none';
+        document.getElementById('awDesc').textContent=w.description||'';
+        // Series name (look it up).
+        var seriesEl=document.getElementById('awSeries');
+        if(w.seriesId){
+          fetch('/api/public/series').then(function(r){return r.json();}).then(function(sd){
+            var s=(sd.series||[]).filter(function(x){return x.id===w.seriesId;})[0];
+            if(s) seriesEl.innerHTML='From the <a href="archive.html">'+esc(s.title)+'</a> series';
+            else seriesEl.style.display='none';
+          }).catch(function(){seriesEl.style.display='none';});
+        } else { seriesEl.style.display='none'; }
+        document.title=(w.title||'Work')+' — Archive — Xavier Haughton Studios';
+        // Media -> carousel (images array carries type now).
+        buildCarousel(w.images||[], null);
+      })
+      .catch(function(){ applyStatic(); });
+  } else {
+    applyStatic();
   }
 </script>
 </body>

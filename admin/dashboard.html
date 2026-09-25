@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — XHS Admin</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+<div class="admin-bar" id="adminBar"></div>
+
+<div class="wrap">
+  <div class="page-eyebrow">Studio Administration</div>
+  <h1 class="page-title">Dashboard</h1>
+  <p class="page-sub">Manage everything on the site — homepage, exhibitions, acquire, archive, and writings.</p>
+
+  <div class="msg" id="msg"></div>
+
+  <!-- HOMEPAGE / HERO -->
+  <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+    <span>Homepage — Hero</span>
+    <a class="btn small" href="/admin/hero-form.html">Edit Hero</a>
+  </div>
+  <div class="item-list" id="heroBox"><div class="empty">Loading…</div></div>
+
+  <!-- EXHIBITIONS -->
+  <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+    <span>Exhibitions</span>
+    <a class="btn small" href="/admin/exhibition-form.html">+ Add Exhibition</a>
+  </div>
+  <div class="item-list" id="exhList"><div class="empty">Loading…</div></div>
+
+  <!-- ACQUIRE -->
+  <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+    <span>Acquire</span>
+    <a class="btn small" href="/admin/acquire-form.html">+ Add Item</a>
+  </div>
+  <div class="item-list" id="acqList"><div class="empty">Loading…</div></div>
+
+  <!-- ARCHIVE: SERIES -->
+  <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+    <span>Archive — Series</span>
+    <a class="btn small" href="/admin/series-form.html">+ Add Series</a>
+  </div>
+  <div class="item-list" id="seriesList"><div class="empty">Loading…</div></div>
+
+  <!-- ARCHIVE: WORKS -->
+  <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+    <span>Archive — Works</span>
+    <a class="btn small" href="/admin/work-form.html">+ Add Work</a>
+  </div>
+  <div class="item-list" id="worksList"><div class="empty">Loading…</div></div>
+
+  <!-- WRITINGS -->
+  <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+    <span>Writings</span>
+    <a class="btn small" href="/admin/writing-form.html">+ Add Writing</a>
+  </div>
+  <div class="item-list" id="writingsList"><div class="empty">Loading…</div></div>
+
+  <!-- ACCESS -->
+  <div class="section-label" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+    <span>Access Control</span>
+    <a class="btn small secondary" href="/admin/access-control.html">Manage Users</a>
+  </div>
+  <div style="height:20px;"></div>
+</div>
+
+<script src="/admin/assets/admin.js"></script>
+<script>
+  const { API, requireSession, renderBar, showMsg, escapeHtml } = window.Admin;
+  let seriesMap = {};
+
+  (async function init() {
+    const user = await requireSession();
+    if (!user) return;
+    renderBar('dashboard', user);
+    await Promise.all([
+      loadHero(), loadExhibitions(), loadAcquire(),
+      loadSeries().then(loadWorks), loadWritings(),
+    ]);
+  })();
+
+  function row(opts) {
+    // opts: { thumb, title, sub, editHref, id, type, tag }
+    const thumb = opts.thumb
+      ? '<img class="thumb" src="' + escapeHtml(opts.thumb) + '" alt="">'
+      : '<div class="thumb"></div>';
+    const del = opts.type
+      ? '<button class="btn small danger" data-id="' + opts.id + '" data-type="' + opts.type + '" data-title="' + escapeHtml(opts.title) + '">Delete</button>'
+      : '';
+    const edit = opts.editHref
+      ? '<a class="btn small secondary" href="' + opts.editHref + '">Edit</a>' : '';
+    const tag = opts.tag
+      ? '<span class="status-tag" style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--light);margin-left:8px;">' + escapeHtml(opts.tag) + '</span>' : '';
+    return '<div class="item-row">' + thumb +
+      '<div class="meta"><div class="t">' + escapeHtml(opts.title) + tag + '</div>' +
+      '<div class="s">' + escapeHtml(opts.sub || '') + '</div></div>' +
+      '<div class="ops">' + edit + del + '</div></div>';
+  }
+
+  function empty(el, msg) { el.innerHTML = '<div class="empty">' + msg + '</div>'; }
+
+  async function loadHero() {
+    const el = document.getElementById('heroBox');
+    try {
+      const { settings } = await API.get('/api/settings');
+      if (!settings.heroTitle && !settings.heroImage) {
+        empty(el, 'No hero set yet — click “Edit Hero”.');
+        return;
+      }
+      el.innerHTML = row({
+        thumb: settings.heroImage,
+        title: settings.heroTitle || '(no title)',
+        sub: settings.heroMeta || '',
+        editHref: '/admin/hero-form.html',
+      });
+    } catch (e) { empty(el, 'Failed to load hero.'); }
+  }
+
+  async function loadExhibitions() {
+    const el = document.getElementById('exhList');
+    try {
+      const { exhibitions } = await API.get('/api/exhibitions');
+      if (!exhibitions.length) return empty(el, 'No exhibitions yet.');
+      el.innerHTML = exhibitions.map((x) => row({
+        thumb: x.image, title: x.title,
+        sub: [x.venue, x.location, x.dateLabel].filter(Boolean).join(' · '),
+        tag: x.status,
+        editHref: '/admin/exhibition-form.html?id=' + x.id,
+        id: x.id, type: 'exhibitions',
+      })).join('');
+      wireDeletes(el);
+    } catch (e) { empty(el, 'Failed to load exhibitions.'); }
+  }
+
+  async function loadAcquire() {
+    const el = document.getElementById('acqList');
+    try {
+      const { items } = await API.get('/api/acquire');
+      if (!items.length) return empty(el, 'No acquire items yet.');
+      el.innerHTML = items.map((i) => row({
+        thumb: i.image, title: i.title,
+        sub: [i.details, i.price].filter(Boolean).join(' · '),
+        tag: i.category + (i.status ? ' · ' + i.status : ''),
+        editHref: '/admin/acquire-form.html?id=' + i.id,
+        id: i.id, type: 'acquire',
+      })).join('');
+      wireDeletes(el);
+    } catch (e) { empty(el, 'Failed to load acquire items.'); }
+  }
+
+  async function loadSeries() {
+    const el = document.getElementById('seriesList');
+    try {
+      const { series } = await API.get('/api/series');
+      seriesMap = {};
+      series.forEach((s) => { seriesMap[s.id] = s.title; });
+      if (!series.length) return empty(el, 'No series yet.');
+      el.innerHTML = series.map((s) => row({
+        thumb: s.heroImage, title: s.title,
+        sub: [s.year || '', (s.description || '').slice(0, 60)].filter(Boolean).join(' · '),
+        editHref: '/admin/series-form.html?id=' + s.id,
+        id: s.id, type: 'series',
+      })).join('');
+      wireDeletes(el);
+    } catch (e) { empty(el, 'Failed to load series.'); }
+  }
+
+  async function loadWorks() {
+    const el = document.getElementById('worksList');
+    try {
+      const { works } = await API.get('/api/works');
+      if (!works.length) return empty(el, 'No works yet.');
+      el.innerHTML = works.map((w) => {
+        const hero = (w.images || []).find((i) => i.isHero) || (w.images || [])[0];
+        const seriesName = w.seriesId ? (seriesMap[w.seriesId] || 'Unknown series') : 'Solo work';
+        return row({
+          thumb: hero && hero.path, title: w.title,
+          sub: [seriesName, w.year || '', w.mediumType || ''].filter(Boolean).join(' · '),
+          editHref: '/admin/work-form.html?id=' + w.id,
+          id: w.id, type: 'works',
+        });
+      }).join('');
+      wireDeletes(el);
+    } catch (e) { empty(el, 'Failed to load works.'); }
+  }
+
+  async function loadWritings() {
+    const el = document.getElementById('writingsList');
+    try {
+      const { writings } = await API.get('/api/writings');
+      if (!writings.length) return empty(el, 'No writings yet.');
+      el.innerHTML = writings.map((w) => row({
+        title: w.title,
+        sub: [w.date, w.externalUrl ? 'External ↗' : ''].filter(Boolean).join(' · '),
+        tag: w.type,
+        editHref: '/admin/writing-form.html?id=' + w.id,
+        id: w.id, type: 'writings',
+      })).join('');
+      wireDeletes(el);
+    } catch (e) { empty(el, 'Failed to load writings.'); }
+  }
+
+  // Shared delete handler: data-type maps directly to the API path.
+  function wireDeletes(container) {
+    container.querySelectorAll('button.danger').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const { id, type, title } = btn.dataset;
+        if (!confirm('Delete "' + title + '"? This cannot be undone.')) return;
+        try {
+          await API.del('/api/' + type + '/' + id);
+          showMsg('Deleted "' + title + '".', 'success');
+          // Reload affected sections.
+          if (type === 'series') { await loadSeries(); await loadWorks(); }
+          else if (type === 'works') await loadWorks();
+          else if (type === 'exhibitions') await loadExhibitions();
+          else if (type === 'acquire') await loadAcquire();
+          else if (type === 'writings') await loadWritings();
+        } catch (e) { showMsg(e.message, 'error'); }
+      });
+    });
+  }
+</script>
+</body>
+</html>

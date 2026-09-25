@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Login — Xavier Haughton Studios</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+<div class="login-screen">
+  <div class="login-box">
+    <div class="lb-brand">Xavier Haughton Studios</div>
+    <div class="lb-sub">Studio Administration</div>
+    <div class="msg" id="msg"></div>
+    <form id="loginForm">
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn">Enter Studio</button>
+    </form>
+  </div>
+</div>
+
+<script src="/admin/assets/admin.js"></script>
+<script>
+  const { API, showMsg } = window.Admin;
+
+  // If already logged in, skip to dashboard.
+  API.get('/api/me').then((me) => {
+    if (me && me.authenticated) window.location.href = '/admin/dashboard.html';
+  }).catch(() => {});
+
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    try {
+      await API.post('/api/login', { username, password });
+      window.location.href = '/admin/dashboard.html';
+    } catch (err) {
+      showMsg(err.message || 'Login failed.', 'error');
+    }
+  });
+</script>
+</body>
+</html>

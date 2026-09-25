@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Writing — XHS Admin</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+<div class="admin-bar" id="adminBar"></div>
+
+<div class="wrap">
+  <div class="page-eyebrow">Writings</div>
+  <h1 class="page-title" id="pageTitle">Add Writing</h1>
+  <p class="page-sub">The practice thinking aloud — essays, notes, interviews, catalogue texts.</p>
+
+  <div class="msg" id="msg"></div>
+
+  <form id="writeForm" class="card">
+    <div class="field">
+      <label for="title">Title</label>
+      <input type="text" id="title" required>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="date">Date Label</label>
+        <input type="text" id="date" placeholder="May 2026">
+        <div class="hint">As shown on the site (e.g. “May 2026”, “2025”).</div>
+      </div>
+      <div class="field" style="max-width:220px;">
+        <label for="type">Type</label>
+        <select id="type">
+          <option value="essay">Essay</option>
+          <option value="note">Note</option>
+          <option value="interview">Interview</option>
+          <option value="catalogue">Catalogue</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="excerpt">Excerpt / Description</label>
+      <textarea id="excerpt" style="min-height:70px;"></textarea>
+      <div class="char-count" id="excerptCount">0 / 20 words</div>
+      <div class="hint">The short line shown beneath the title in the list. Max 20 words.</div>
+    </div>
+
+    <div class="field">
+      <label for="externalUrl">External URL (optional)</label>
+      <input type="text" id="externalUrl" placeholder="https://…">
+      <div class="hint">If set, the writing is marked “Published externally”.</div>
+    </div>
+
+    <div class="field">
+      <label>Body</label>
+      <div id="editorMount"></div>
+      <div class="hint">Use the toolbar for headings, emphasis, quotes, lists, and links.</div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="btn" id="saveBtn">Save Writing</button>
+      <a class="btn secondary" href="/admin/dashboard.html">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script src="/admin/assets/admin.js"></script>
+<script src="/admin/assets/editor.js"></script>
+<script>
+  const { API, requireSession, renderBar, showMsg, qs } = window.Admin;
+  const editId = qs('id');
+  const EXCERPT_MAX_WORDS = 20;
+  let editor = null;
+
+  // Count words: split on whitespace, ignore empty tokens.
+  function countWords(text) {
+    const t = String(text || '').trim();
+    return t ? t.split(/\s+/).length : 0;
+  }
+
+  function updateExcerptCount() {
+    const ta = document.getElementById('excerpt');
+    const cc = document.getElementById('excerptCount');
+    const n = countWords(ta.value);
+    cc.textContent = n + ' / ' + EXCERPT_MAX_WORDS + ' words';
+    cc.classList.toggle('over', n > EXCERPT_MAX_WORDS);
+  }
+
+  (async function init() {
+    const user = await requireSession();
+    if (!user) return;
+    renderBar('writings', user);
+    editor = XHSEditor.mount('#editorMount', '<p><br></p>');
+    document.getElementById('excerpt').addEventListener('input', updateExcerptCount);
+    updateExcerptCount();
+    if (editId) await loadExisting();
+    document.getElementById('writeForm').addEventListener('submit', save);
+  })();
+
+  async function loadExisting() {
+    try {
+      const { writing: w } = await API.get('/api/writings/' + editId);
+      document.getElementById('pageTitle').textContent = 'Edit Writing';
+      document.getElementById('title').value = w.title || '';
+      document.getElementById('date').value = w.date || '';
+      document.getElementById('type').value = w.type || 'essay';
+      document.getElementById('excerpt').value = w.excerpt || '';
+      document.getElementById('externalUrl').value = w.externalUrl || '';
+      updateExcerptCount();
+      editor.setHTML(w.body || '<p><br></p>');
+    } catch (e) { showMsg('Could not load writing: ' + e.message, 'error'); }
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    const payload = {
+      title: document.getElementById('title').value.trim(),
+      date: document.getElementById('date').value.trim(),
+      type: document.getElementById('type').value,
+      excerpt: document.getElementById('excerpt').value.trim(),
+      externalUrl: document.getElementById('externalUrl').value.trim(),
+      body: editor.getHTML(),
+    };
+    if (!payload.title) return showMsg('Title is required.', 'error');
+    if (countWords(payload.excerpt) > EXCERPT_MAX_WORDS) {
+      return showMsg('Excerpt must be ' + EXCERPT_MAX_WORDS + ' words or fewer.', 'error');
+    }
+    try {
+      if (editId) {
+        await API.put('/api/writings/' + editId, payload);
+        showMsg('Writing updated.', 'success');
+      } else {
+        await API.post('/api/writings', payload);
+        showMsg('Writing created. Redirecting…', 'success');
+        setTimeout(() => { window.location.href = '/admin/dashboard.html'; }, 900);
+      }
+    } catch (err) { showMsg(err.message, 'error'); }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acquire Item — XHS Admin</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+<div class="admin-bar" id="adminBar"></div>
+
+<div class="wrap">
+  <div class="page-eyebrow">Acquire</div>
+  <h1 class="page-title" id="pageTitle">Add Acquire Item</h1>
+  <p class="page-sub">Original works (inquiry) and editions &amp; multiples (purchase).</p>
+
+  <div class="msg" id="msg"></div>
+
+  <form id="acqForm" class="card">
+    <div class="field">
+      <label for="title">Title</label>
+      <input type="text" id="title" required>
+    </div>
+
+    <div class="field">
+      <label>Category</label>
+      <div class="radios" id="category">
+        <label><input type="radio" name="cat" value="original" checked> Original</label>
+        <label><input type="radio" name="cat" value="edition"> Edition / Multiple</label>
+      </div>
+      <div class="hint">Originals appear under “Originals”; editions under “Editions &amp; Multiples”.</div>
+    </div>
+
+    <div class="field">
+      <label for="details">Details</label>
+      <input type="text" id="details" placeholder="Oil on linen · 60 × 48 in · 2025">
+      <div class="hint">The descriptive line under the title (materials, size, edition, year).</div>
+    </div>
+
+    <div class="row">
+      <div class="field" style="max-width:200px;">
+        <label for="price">Price</label>
+        <input type="text" id="price" placeholder="$650">
+        <div class="hint">Usually only for editions. Leave blank for originals.</div>
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <div class="radios" id="status">
+          <label><input type="radio" name="st" value="available"> Available</label>
+          <label><input type="radio" name="st" value="inquire"> Inquire only</label>
+          <label><input type="radio" name="st" value="in collection"> In Collection</label>
+          <label><input type="radio" name="st" value="sold out"> Sold Out</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Image</label>
+      <div class="img-slots" style="grid-template-columns:1fr;max-width:360px;">
+        <div class="img-slot" id="imgSlot" style="aspect-ratio:4/5;"><div class="slot-empty">No image</div></div>
+      </div>
+      <input type="file" id="imgFile" accept="image/jpeg,image/png,image/webp" style="margin-top:12px;">
+      <div class="uploading" id="imgStatus"></div>
+    </div>
+
+    <div class="actions">
+      <button type="submit" class="btn" id="saveBtn">Save Item</button>
+      <a class="btn secondary" href="/admin/dashboard.html">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script src="/admin/assets/admin.js"></script>
+<script>
+  const { API, requireSession, renderBar, showMsg, escapeHtml, qs } = window.Admin;
+  const editId = qs('id');
+  let image = null;
+
+  (async function init() {
+    const user = await requireSession();
+    if (!user) return;
+    renderBar('acquire', user);
+    wireUpload();
+    if (editId) await loadExisting();
+    document.getElementById('acqForm').addEventListener('submit', save);
+  })();
+
+  function renderImg() {
+    const slot = document.getElementById('imgSlot');
+    if (image) {
+      slot.innerHTML = '<img src="' + escapeHtml(image) + '" alt="">' +
+        '<div class="slot-tools"><span>Image</span><button type="button" id="rm">Remove</button></div>';
+      slot.querySelector('#rm').addEventListener('click', () => { image = null; renderImg(); });
+    } else { slot.innerHTML = '<div class="slot-empty">No image</div>'; }
+  }
+
+  function wireUpload() {
+    document.getElementById('imgFile').addEventListener('change', async (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const status = document.getElementById('imgStatus'); status.textContent = 'Uploading…';
+      try {
+        const fd = new FormData(); fd.append('image', file);
+        const res = await API.upload('/api/upload', fd);
+        image = res.path; renderImg(); status.textContent = '';
+      } catch (err) { status.textContent = ''; showMsg(err.message, 'error'); }
+      e.target.value = '';
+    });
+  }
+
+  async function loadExisting() {
+    try {
+      const { item } = await API.get('/api/acquire/' + editId);
+      document.getElementById('pageTitle').textContent = 'Edit Acquire Item';
+      document.getElementById('title').value = item.title || '';
+      document.getElementById('details').value = item.details || '';
+      document.getElementById('price').value = item.price || '';
+      const c = document.querySelector('#category input[value="' + (item.category || 'original') + '"]');
+      if (c) c.checked = true;
+      if (item.status) {
+        const s = document.querySelector('#status input[value="' + CSS.escape(item.status) + '"]');
+        if (s) s.checked = true;
+      }
+      image = item.image || null; renderImg();
+    } catch (e) { showMsg('Could not load item: ' + e.message, 'error'); }
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    const cat = document.querySelector('#category input:checked');
+    const st = document.querySelector('#status input:checked');
+    const payload = {
+      title: document.getElementById('title').value.trim(),
+      category: cat ? cat.value : 'original',
+      details: document.getElementById('details').value.trim(),
+      price: document.getElementById('price').value.trim(),
+      status: st ? st.value : '',
+      image: image,
+    };
+    if (!payload.title) return showMsg('Title is required.', 'error');
+    try {
+      if (editId) {
+        await API.put('/api/acquire/' + editId, payload);
+        showMsg('Item updated.', 'success');
+      } else {
+        await API.post('/api/acquire', payload);
+        showMsg('Item created. Redirecting…', 'success');
+        setTimeout(() => { window.location.href = '/admin/dashboard.html'; }, 900);
+      }
+    } catch (err) { showMsg(err.message, 'error'); }
+  }
+</script>
+</body>
+</html>
