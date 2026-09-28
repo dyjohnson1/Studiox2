@@ -71,6 +71,153 @@
       await API.post('/api/logout').catch(() => {});
       window.location.href = '/admin/login.html';
     });
+
+    // Insert a Back button just under the bar (skip on the dashboard itself).
+    if (active !== 'dashboard' && !document.getElementById('adminBackRow')) {
+      const row = document.createElement('div');
+      row.id = 'adminBackRow';
+      row.className = 'admin-back-row';
+      row.innerHTML = '<button type="button" class="btn-back" id="adminBackBtn">← Back</button>';
+      el.insertAdjacentElement('afterend', row);
+      const back = document.getElementById('adminBackBtn');
+      back.addEventListener('click', () => {
+        // Go to the previous page if we came from within the app, else dashboard.
+        if (document.referrer && document.referrer.indexOf(window.location.origin) === 0
+            && document.referrer !== window.location.href) {
+          history.back();
+        } else {
+          window.location.href = '/admin/dashboard.html';
+        }
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reusable media manager: manages an array of {type,path,order,isHero} items
+  // with upload (image or video), reorder, hero selection, and removal.
+  // Renders into a container element; call getItems() to read the current list.
+  //
+  //   const mm = Admin.createMediaManager({
+  //     slotsEl, fileInput, statusEl, max: 5, hero: true,
+  //     accept: 'image+video', onError: (msg)=>showMsg(msg,'error')
+  //   });
+  //   mm.set(existingArray); mm.getItems();
+  // ---------------------------------------------------------------------------
+  function createMediaManager(opts) {
+    const slotsEl = opts.slotsEl;
+    const fileInput = opts.fileInput;
+    const statusEl = opts.statusEl || null;
+    const max = opts.max || 5;
+    const useHero = opts.hero !== false;
+    const onError = opts.onError || function () {};
+    let items = [];
+
+    function preview(item) {
+      if (item.type === 'video') {
+        return '<video src="' + escapeHtml(item.path) + '" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video>' +
+          '<span class="media-badge">Video</span>';
+      }
+      return '<img src="' + escapeHtml(item.path) + '" alt="">';
+    }
+
+    function render() {
+      items.sort((a, b) => a.order - b.order);
+      items.forEach((it, i) => { it.order = i + 1; });
+      if (useHero && items.length && !items.some((i) => i.isHero)) items[0].isHero = true;
+
+      let html = '';
+      for (let i = 0; i < max; i++) {
+        const it = items[i];
+        if (it) {
+          html += '<div class="img-slot">' + preview(it) +
+            '<div class="reorder">' +
+            (i > 0 ? '<button type="button" data-act="up" data-i="' + i + '">↑</button>' : '') +
+            (i < items.length - 1 ? '<button type="button" data-act="down" data-i="' + i + '">↓</button>' : '') +
+            '</div>' +
+            '<div class="slot-tools">' +
+            (useHero ? '<label><input type="radio" name="mm-hero" data-i="' + i + '"' + (it.isHero ? ' checked' : '') + '> Hero</label>' : '<span></span>') +
+            '<button type="button" data-act="remove" data-i="' + i + '">Remove</button>' +
+            '</div></div>';
+        } else {
+          html += '<div class="img-slot"><div class="slot-empty">Empty slot</div></div>';
+        }
+      }
+      slotsEl.innerHTML = html;
+
+      slotsEl.querySelectorAll('[data-act]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const i = parseInt(btn.dataset.i, 10);
+          const act = btn.dataset.act;
+          if (act === 'remove') items.splice(i, 1);
+          else if (act === 'up') swap(i, i - 1);
+          else if (act === 'down') swap(i, i + 1);
+          if (useHero && items.length && !items.some((x) => x.isHero)) items[0].isHero = true;
+          render();
+        });
+      });
+      if (useHero) {
+        slotsEl.querySelectorAll('input[name="mm-hero"]').forEach((radio) => {
+          radio.addEventListener('change', () => {
+            const i = parseInt(radio.dataset.i, 10);
+            items.forEach((it, idx) => { it.isHero = idx === i; });
+          });
+        });
+      }
+    }
+
+    function swap(a, b) {
+      if (b < 0 || b >= items.length) return;
+      const t = items[a]; items[a] = items[b]; items[b] = t;
+      items.forEach((it, i) => { it.order = i + 1; });
+    }
+
+    if (fileInput) {
+      fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (items.length >= max) {
+          onError('You can add at most ' + max + ' media items.');
+          e.target.value = '';
+          return;
+        }
+        if (statusEl) statusEl.textContent = 'Uploading…';
+        try {
+          const fd = new FormData();
+          fd.append('media', file);
+          const res = await API.upload('/api/upload', fd);
+          items.push({
+            type: res.type || 'image',
+            path: res.path,
+            order: items.length + 1,
+            isHero: useHero && items.length === 0,
+          });
+          if (useHero && !items.some((i) => i.isHero)) items[0].isHero = true;
+          render();
+          if (statusEl) statusEl.textContent = '';
+        } catch (err) {
+          if (statusEl) statusEl.textContent = '';
+          onError(err.message);
+        }
+        e.target.value = '';
+      });
+    }
+
+    return {
+      set(arr) {
+        items = (arr || []).map((it, i) => ({
+          type: it.type === 'video' ? 'video' : 'image',
+          path: it.path,
+          order: it.order || i + 1,
+          isHero: !!it.isHero,
+        }));
+        render();
+      },
+      getItems() {
+        return items.map((it, i) => ({ type: it.type || 'image', path: it.path, order: i + 1, isHero: !!it.isHero }));
+      },
+      render,
+      count() { return items.length; },
+    };
   }
 
   function linkTag(href, label, active) {
@@ -100,5 +247,5 @@
     return new URLSearchParams(window.location.search).get(name);
   }
 
-  window.Admin = { API, requireSession, renderBar, showMsg, escapeHtml, qs };
+  window.Admin = { API, requireSession, renderBar, showMsg, escapeHtml, qs, createMediaManager };
 })();

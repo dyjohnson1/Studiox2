@@ -56,12 +56,11 @@
     </div>
 
     <div class="field">
-      <label>Image</label>
-      <div class="img-slots" style="grid-template-columns:1fr;max-width:420px;">
-        <div class="img-slot" id="imgSlot" style="aspect-ratio:4/3;"><div class="slot-empty">No image</div></div>
-      </div>
-      <input type="file" id="imgFile" accept="image/jpeg,image/png,image/webp" style="margin-top:12px;">
+      <label>Media <span style="text-transform:none;letter-spacing:0;color:var(--light);">(up to 15 images or videos — pick a hero, reorder with arrows)</span></label>
+      <input type="file" id="imgFile" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm">
+      <div class="hint">Images: JPG, PNG, WebP (max 15MB). Videos: MP4, WebM (max 100MB).</div>
       <div class="uploading" id="imgStatus"></div>
+      <div class="img-slots" id="imgSlots"></div>
     </div>
 
     <div class="actions">
@@ -73,16 +72,23 @@
 
 <script src="/admin/assets/admin.js"></script>
 <script>
-  const { API, requireSession, renderBar, showMsg, escapeHtml, qs } = window.Admin;
+  const { API, requireSession, renderBar, showMsg, escapeHtml, qs, createMediaManager } = window.Admin;
   const editId = qs('id');
-  let image = null;
+  let media = null;
 
   (async function init() {
     const user = await requireSession();
     if (!user) return;
     renderBar('exhibitions', user);
     populateYears();
-    wireUpload();
+    media = createMediaManager({
+      slotsEl: document.getElementById('imgSlots'),
+      fileInput: document.getElementById('imgFile'),
+      statusEl: document.getElementById('imgStatus'),
+      max: 15, hero: true,
+      onError: (msg) => showMsg(msg, 'error'),
+    });
+    media.render();
     if (editId) await loadExisting();
     document.getElementById('exhForm').addEventListener('submit', save);
   })();
@@ -92,28 +98,6 @@
     let opts = '<option value="">—</option>';
     for (let y = 2030; y >= 1990; y--) opts += '<option value="' + y + '">' + y + '</option>';
     sel.innerHTML = opts;
-  }
-
-  function renderImg() {
-    const slot = document.getElementById('imgSlot');
-    if (image) {
-      slot.innerHTML = '<img src="' + escapeHtml(image) + '" alt="">' +
-        '<div class="slot-tools"><span>Image</span><button type="button" id="rm">Remove</button></div>';
-      slot.querySelector('#rm').addEventListener('click', () => { image = null; renderImg(); });
-    } else { slot.innerHTML = '<div class="slot-empty">No image</div>'; }
-  }
-
-  function wireUpload() {
-    document.getElementById('imgFile').addEventListener('change', async (e) => {
-      const file = e.target.files[0]; if (!file) return;
-      const status = document.getElementById('imgStatus'); status.textContent = 'Uploading…';
-      try {
-        const fd = new FormData(); fd.append('image', file);
-        const res = await API.upload('/api/upload', fd);
-        image = res.path; renderImg(); status.textContent = '';
-      } catch (err) { status.textContent = ''; showMsg(err.message, 'error'); }
-      e.target.value = '';
-    });
   }
 
   async function loadExisting() {
@@ -127,7 +111,8 @@
       document.getElementById('year').value = x.year || '';
       const r = document.querySelector('#status input[value="' + (x.status || 'past') + '"]');
       if (r) r.checked = true;
-      image = x.image || null; renderImg();
+      if (x.media && x.media.length) media.set(x.media);
+      else if (x.image) media.set([{ type: 'image', path: x.image, order: 1, isHero: true }]);
     } catch (e) { showMsg('Could not load exhibition: ' + e.message, 'error'); }
   }
 
@@ -141,7 +126,7 @@
       dateLabel: document.getElementById('dateLabel').value.trim(),
       year: document.getElementById('year').value || null,
       status: status ? status.value : 'past',
-      image: image,
+      media: media.getItems(),
     };
     if (!payload.title) return showMsg('Title is required.', 'error');
     try {

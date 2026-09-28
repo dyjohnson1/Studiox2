@@ -33,8 +33,33 @@
 
     <div class="field">
       <label for="details">Details</label>
-      <input type="text" id="details" placeholder="Oil on linen · 60 × 48 in · 2025">
-      <div class="hint">The descriptive line under the title (materials, size, edition, year).</div>
+      <input type="text" id="details" placeholder="e.g. materials, edition, or a short descriptive line">
+      <div class="hint">Optional. A short descriptive line shown under the title.</div>
+    </div>
+
+    <div class="field">
+      <label>Materials</label>
+      <div class="checks" id="materials"></div>
+      <input type="text" id="materialsOther" placeholder="Other materials (comma-separated)" style="margin-top:12px;">
+    </div>
+
+    <div class="field">
+      <label>Medium Type</label>
+      <div class="radios" id="mediumType">
+        <label><input type="radio" name="medium" value=""> —</label>
+        <label><input type="radio" name="medium" value="painting"> Painting</label>
+        <label><input type="radio" name="medium" value="sculpture"> Sculpture</label>
+        <label><input type="radio" name="medium" value="works-on-paper"> Works on Paper</label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Dimensions (inches)</label>
+      <div class="row">
+        <div class="field"><label for="dH" style="text-transform:none;letter-spacing:0;color:var(--light);">Height</label><input type="number" id="dH" step="0.1" min="0"></div>
+        <div class="field"><label for="dW" style="text-transform:none;letter-spacing:0;color:var(--light);">Width</label><input type="number" id="dW" step="0.1" min="0"></div>
+        <div class="field"><label for="dD" style="text-transform:none;letter-spacing:0;color:var(--light);">Depth (optional)</label><input type="number" id="dD" step="0.1" min="0"></div>
+      </div>
     </div>
 
     <div class="row">
@@ -48,19 +73,17 @@
         <div class="radios" id="status">
           <label><input type="radio" name="st" value="available"> Available</label>
           <label><input type="radio" name="st" value="inquire"> Inquire only</label>
-          <label><input type="radio" name="st" value="in collection"> In Collection</label>
           <label><input type="radio" name="st" value="sold out"> Sold Out</label>
         </div>
       </div>
     </div>
 
     <div class="field">
-      <label>Image</label>
-      <div class="img-slots" style="grid-template-columns:1fr;max-width:360px;">
-        <div class="img-slot" id="imgSlot" style="aspect-ratio:4/5;"><div class="slot-empty">No image</div></div>
-      </div>
-      <input type="file" id="imgFile" accept="image/jpeg,image/png,image/webp" style="margin-top:12px;">
+      <label>Media <span style="text-transform:none;letter-spacing:0;color:var(--light);">(up to 5 images or videos — pick a hero, reorder with arrows)</span></label>
+      <input type="file" id="imgFile" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm">
+      <div class="hint">Images: JPG, PNG, WebP (max 15MB). Videos: MP4, WebM (max 100MB).</div>
       <div class="uploading" id="imgStatus"></div>
+      <div class="img-slots" id="imgSlots"></div>
     </div>
 
     <div class="actions">
@@ -72,39 +95,39 @@
 
 <script src="/admin/assets/admin.js"></script>
 <script>
-  const { API, requireSession, renderBar, showMsg, escapeHtml, qs } = window.Admin;
+  const { API, requireSession, renderBar, showMsg, escapeHtml, qs, createMediaManager } = window.Admin;
   const editId = qs('id');
-  let image = null;
+  const MATERIAL_OPTIONS = ['oil','watercolor','acrylic','charcoal','ink','bronze','metals','glass','wood','linen','canvas','mixed media'];
+  let media = null; // MediaManager instance
 
   (async function init() {
     const user = await requireSession();
     if (!user) return;
     renderBar('acquire', user);
-    wireUpload();
+    renderMaterials();
+    media = createMediaManager({
+      slotsEl: document.getElementById('imgSlots'),
+      fileInput: document.getElementById('imgFile'),
+      statusEl: document.getElementById('imgStatus'),
+      max: 5, hero: true,
+      onError: (msg) => showMsg(msg, 'error'),
+    });
+    media.render();
     if (editId) await loadExisting();
     document.getElementById('acqForm').addEventListener('submit', save);
   })();
 
-  function renderImg() {
-    const slot = document.getElementById('imgSlot');
-    if (image) {
-      slot.innerHTML = '<img src="' + escapeHtml(image) + '" alt="">' +
-        '<div class="slot-tools"><span>Image</span><button type="button" id="rm">Remove</button></div>';
-      slot.querySelector('#rm').addEventListener('click', () => { image = null; renderImg(); });
-    } else { slot.innerHTML = '<div class="slot-empty">No image</div>'; }
+  function renderMaterials() {
+    document.getElementById('materials').innerHTML = MATERIAL_OPTIONS.map((m) =>
+      '<label><input type="checkbox" value="' + m + '"> ' + m + '</label>'
+    ).join('');
   }
 
-  function wireUpload() {
-    document.getElementById('imgFile').addEventListener('change', async (e) => {
-      const file = e.target.files[0]; if (!file) return;
-      const status = document.getElementById('imgStatus'); status.textContent = 'Uploading…';
-      try {
-        const fd = new FormData(); fd.append('image', file);
-        const res = await API.upload('/api/upload', fd);
-        image = res.path; renderImg(); status.textContent = '';
-      } catch (err) { status.textContent = ''; showMsg(err.message, 'error'); }
-      e.target.value = '';
-    });
+  function collectMaterials() {
+    const checked = [...document.querySelectorAll('#materials input:checked')].map((c) => c.value);
+    const other = document.getElementById('materialsOther').value
+      .split(',').map((s) => s.trim()).filter(Boolean);
+    return [...checked, ...other];
   }
 
   async function loadExisting() {
@@ -120,7 +143,27 @@
         const s = document.querySelector('#status input[value="' + CSS.escape(item.status) + '"]');
         if (s) s.checked = true;
       }
-      image = item.image || null; renderImg();
+      // materials
+      const known = new Set(MATERIAL_OPTIONS);
+      const other = [];
+      (item.materials || []).forEach((m) => {
+        const box = document.querySelector('#materials input[value="' + CSS.escape(m) + '"]');
+        if (box) box.checked = true; else if (!known.has(m)) other.push(m);
+      });
+      document.getElementById('materialsOther').value = other.join(', ');
+      // medium type
+      if (item.mediumType) {
+        const r = document.querySelector('#mediumType input[value="' + item.mediumType + '"]');
+        if (r) r.checked = true;
+      }
+      // dimensions
+      const d = item.dimensions || {};
+      if (d.height != null) document.getElementById('dH').value = d.height;
+      if (d.width != null) document.getElementById('dW').value = d.width;
+      if (d.depth != null) document.getElementById('dD').value = d.depth;
+      // media (fall back to single image for older records)
+      if (item.media && item.media.length) media.set(item.media);
+      else if (item.image) media.set([{ type: 'image', path: item.image, order: 1, isHero: true }]);
     } catch (e) { showMsg('Could not load item: ' + e.message, 'error'); }
   }
 
@@ -128,13 +171,21 @@
     e.preventDefault();
     const cat = document.querySelector('#category input:checked');
     const st = document.querySelector('#status input:checked');
+    const medium = document.querySelector('#mediumType input:checked');
     const payload = {
       title: document.getElementById('title').value.trim(),
       category: cat ? cat.value : 'original',
       details: document.getElementById('details').value.trim(),
       price: document.getElementById('price').value.trim(),
       status: st ? st.value : '',
-      image: image,
+      materials: collectMaterials(),
+      mediumType: medium ? medium.value : null,
+      dimensions: {
+        height: document.getElementById('dH').value || null,
+        width: document.getElementById('dW').value || null,
+        depth: document.getElementById('dD').value || null,
+      },
+      media: media.getItems(),
     };
     if (!payload.title) return showMsg('Title is required.', 'error');
     try {

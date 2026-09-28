@@ -41,6 +41,22 @@ a{color:inherit;}
 }
 .btn-logout:hover{border-color:var(--black);color:var(--black);}
 
+/* ---------- Back row ---------- */
+.admin-back-row{max-width:920px;margin:0 auto;padding:22px 40px 0;}
+.btn-back{
+  background:none;border:1px solid var(--line);cursor:pointer;
+  font-family:var(--sans);font-size:12px;letter-spacing:.08em;
+  color:var(--gray);padding:9px 16px;transition:all .2s;
+}
+.btn-back:hover{border-color:var(--black);color:var(--black);}
+
+/* ---------- Media badge (video marker in slots) ---------- */
+.img-slot .media-badge{
+  position:absolute;top:6px;right:6px;background:rgba(17,17,17,.75);color:#fff;
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;
+}
+@media(max-width:640px){ .admin-back-row{padding:16px 20px 0;} }
+
 /* ---------- Layout ---------- */
 .wrap{max-width:920px;margin:0 auto;padding:50px 40px 90px;}
 .page-eyebrow{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--light);margin-bottom:12px;}
